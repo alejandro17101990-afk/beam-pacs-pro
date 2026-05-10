@@ -3,434 +3,156 @@ from docx import Document
 import speech_recognition as sr
 import io
 from openai import OpenAI
-from datetime import datetime
 
-# =========================================================
-# CONFIGURACIÓN PREMIUM
-# =========================================================
-
-st.set_page_config(
-    page_title="Lumen Core AI",
-    page_icon="🧠",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# =========================================================
-# ESTILO VISUAL ULTRA PREMIUM
-# =========================================================
+# 1. CONFIGURACIÓN DE INTERFAZ (Inspiración v0 / Perplexity)
+st.set_page_config(page_title="Lumen AI | Estación de Trabajo", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
-<style>
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,600;1,400&display=swap');
+    .stApp { background-color: #09090b; color: #f4f4f5; font-family: 'Inter', sans-serif; }
+    
+    /* Panel lateral elegante */
+    [data-testid="stSidebar"] { background-color: #0c0c0f; border-right: 1px solid #27272a; }
+    
+    /* Contenedores de edición */
+    .stTextArea textarea { 
+        background-color: #121214 !important; color: #ffffff !important; 
+        border: 1px solid #27272a !important; border-radius: 12px !important;
+        font-size: 16px !important; line-height: 1.6 !important;
+    }
+    .stTextArea textarea:focus { border-color: #6366f1 !important; box-shadow: 0 0 0 1px #6366f1 !important; }
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    /* Botones Premium */
+    .stButton>button { 
+        background: #ffffff !important; color: #09090b !important; 
+        border-radius: 10px !important; font-weight: 600 !important;
+        padding: 0.6rem 2rem !important; border: none !important;
+    }
+    .stButton>button:hover { background: #e4e4e7 !important; transform: translateY(-1px); }
+    
+    /* Botón Secundario (Reformular) */
+    .secondary-btn button { background: #18181b !important; color: #ffffff !important; border: 1px solid #27272a !important; }
 
-html, body, [class*="css"] {
-    font-family: 'Inter', sans-serif;
-}
+    /* Estilo de la barra de dictado */
+    [data-testid="stChatInput"] { background-color: #121214 !important; border: 1px solid #27272a !important; border-radius: 20px !important; }
+    </style>
+    """, unsafe_allow_html=True)
 
-.stApp {
-    background:
-        radial-gradient(circle at top left, rgba(124,58,237,0.15), transparent 30%),
-        radial-gradient(circle at bottom right, rgba(59,130,246,0.12), transparent 30%),
-        #09090b;
-    color: #f4f4f5;
-}
-
-/* HEADER */
-header {
-    visibility: hidden;
-}
-
-/* SIDEBAR */
-[data-testid="stSidebar"] {
-    background: rgba(12,12,15,0.95);
-    border-right: 1px solid rgba(255,255,255,0.06);
-    backdrop-filter: blur(20px);
-}
-
-/* TITLES */
-h1, h2, h3 {
-    letter-spacing: -0.03em;
-}
-
-/* CARDS */
-.block-container {
-    padding-top: 2rem;
-}
-
-/* CHAT MESSAGE */
-[data-testid="stChatMessage"] {
-    background: rgba(24,24,27,0.65);
-    border: 1px solid rgba(255,255,255,0.05);
-    border-radius: 18px;
-    padding: 1rem;
-    backdrop-filter: blur(14px);
-    margin-bottom: 1rem;
-}
-
-/* INPUT */
-[data-testid="stChatInput"] {
-    background: rgba(24,24,27,0.9) !important;
-    border: 1px solid rgba(255,255,255,0.08) !important;
-    border-radius: 20px !important;
-    padding: 0.5rem !important;
-    backdrop-filter: blur(20px);
-}
-
-/* TEXTAREA */
-textarea {
-    color: white !important;
-}
-
-/* BUTTONS */
-.stButton>button {
-    background: linear-gradient(135deg, #7c3aed, #6366f1) !important;
-    color: white !important;
-    border: none !important;
-    border-radius: 14px !important;
-    padding: 0.75rem 1rem !important;
-    font-weight: 600 !important;
-    transition: all 0.25s ease;
-    box-shadow: 0 0 25px rgba(124,58,237,0.35);
-}
-
-.stButton>button:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 0 35px rgba(124,58,237,0.55);
-}
-
-/* SELECTBOX */
-.stSelectbox div[data-baseweb="select"] {
-    background: rgba(24,24,27,0.8) !important;
-    border-radius: 14px !important;
-    border: 1px solid rgba(255,255,255,0.06) !important;
-}
-
-/* FILE UPLOADER */
-.stFileUploader > div {
-    background: rgba(24,24,27,0.7);
-    border-radius: 16px;
-    border: 1px dashed rgba(255,255,255,0.08);
-}
-
-/* DOWNLOAD BUTTON */
-.stDownloadButton>button {
-    background: linear-gradient(135deg,#2563eb,#4f46e5) !important;
-}
-
-/* DIVIDERS */
-hr {
-    border-color: rgba(255,255,255,0.06);
-}
-
-/* METRIC CARDS */
-.metric-card {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.05);
-    border-radius: 18px;
-    padding: 1rem;
-    backdrop-filter: blur(12px);
-}
-
-</style>
-""", unsafe_allow_html=True)
-
-# =========================================================
-# FUNCIONES
-# =========================================================
-
-def leer_word_multimodal(file):
+# 2. FUNCIONES DE LÓGICA CLÍNICA
+def leer_plantilla(file):
     doc = Document(file)
-    contenido = []
-
-    for para in doc.paragraphs:
-        if para.text.strip():
-            contenido.append(para.text)
-
-    for table in doc.tables:
-        contenido.append("\\n[TABLA DETECTADA]")
-        for row in table.rows:
-            fila = " | ".join([cell.text for cell in row.cells])
-            contenido.append(fila)
-
-    return '\\n'.join(contenido)
+    return '\n'.join([p.text for p in doc.paragraphs if p.text.strip()])
 
 def generar_docx(texto):
     doc = Document()
-
-    titulo = doc.add_heading('Informe Radiológico', level=1)
-    titulo.style.font.size = 240000
-
-    for linea in texto.split('\\n'):
+    for linea in texto.split('\n'):
         doc.add_paragraph(linea)
-
     bio = io.BytesIO()
     doc.save(bio)
-
     return bio.getvalue()
 
-def transcribir_audio(audio_file):
+def transcribir_instantaneo(audio_file):
     r = sr.Recognizer()
-
     with sr.AudioFile(audio_file) as source:
-        audio = r.record(source)
+        try:
+            return r.recognize_google(r.record(source), language="es-MX")
+        except: return ""
 
-    try:
-        texto = r.recognize_google(audio, language="es-MX")
-        return texto
-    except:
-        return "[No fue posible transcribir el audio]"
+# Inicialización de memoria
+if 'reporte_editable' not in st.session_state: st.session_state.reporte_editable = ""
+if 'dictado_acumulado' not in st.session_state: st.session_state.dictado_acumulado = ""
 
-# =========================================================
-# SESSION STATE
-# =========================================================
-
-if "mensajes" not in st.session_state:
-    st.session_state.mensajes = []
-
-if "ultimo_reporte" not in st.session_state:
-    st.session_state.ultimo_reporte = ""
-
-# =========================================================
-# SIDEBAR
-# =========================================================
-
+# 3. BARRA LATERAL (Configuración y Plantillas)
 with st.sidebar:
-
-    st.markdown("# 🧠 Lumen Core AI")
-    st.caption("Radiology Intelligence Workspace")
-
-    st.markdown("---")
-
+    st.markdown("### 🧬 Lumen Core")
+    st.caption("Configuración de Especialidad")
+    
     try:
         api_key = st.secrets["deepseek_key"]
-        st.success("● DeepSeek conectado")
     except:
-        api_key = st.text_input(
-            "DeepSeek API Key",
-            type="password"
-        )
+        api_key = st.text_input("DeepSeek Key", type="password")
+    
+    st.divider()
+    modalidad = st.selectbox("Modalidad", ["Resonancia", "Tomografía", "Radiografía", "Ultrasonido", "PET-CT"])
+    archivo_base = st.file_uploader("Cargar Plantilla Institucional", type=["docx"])
+    plantilla_txt = leer_plantilla(archivo_base) if archivo_base else ""
+    
+    st.divider()
+    st.info("💡 **Consejo:** El dictado ahora prioriza tus hallazgos sobre lo que diga la plantilla base.")
 
-    st.markdown("---")
+# 4. WORKSPACE DE DOBLE PANEL
+col_dictado, col_reporte = st.columns([1, 1.3], gap="large")
 
-    st.markdown("### Modalidad")
+with col_dictado:
+    st.markdown("#### 🎙️ Dictado y Hallazgos")
+    
+    # Dictado de voz con feedback inmediato
+    audio_data = st.audio_input("Dictar ahora")
+    if audio_data:
+        transcripcion = transcribir_instantaneo(audio_data)
+        if transcripcion and transcripcion not in st.session_state.dictado_acumulado:
+            st.session_state.dictado_acumulado += " " + transcripcion
+    
+    # El usuario puede ver y editar lo que se ha dictado antes de procesar
+    hallazgos_finales = st.text_area("Hallazgos para procesar (puedes editarlos):", 
+                                     value=st.session_state.dictado_acumulado, 
+                                     height=250,
+                                     placeholder="Lo que dictes aparecerá aquí. Corrígelo si es necesario...")
+    
+    if st.button("✨ Generar Informe"):
+        if api_key and hallazgos_finales:
+            client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+            
+            prompt_medico = f"""
+            Eres un radiólogo experto. Genera un informe de {modalidad}.
+            
+            INSTRUCCIÓN CRUCIAL:
+            - Prioriza los HALLAZGOS DICTADOS. 
+            - Si la PLANTILLA BASE contiene patología pero los HALLAZGOS dicen que es normal, el informe DEBE ser normal.
+            - Corrige errores fonéticos (ej: si dice 'hoja' en contexto de rodilla, cámbialo a 'Grasa de Hoffa').
+            
+            PLANTILLA BASE: {plantilla_txt}
+            HALLAZGOS DICTADOS: {hallazgos_finales}
+            """
+            
+            with st.spinner("IA redactando..."):
+                res = client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[{"role": "system", "content": prompt_medico}],
+                    temperature=0.1
+                )
+                st.session_state.reporte_editable = res.choices[0].message.content
+                st.rerun()
 
-    modalidad = st.selectbox(
-        "Seleccionar estudio",
-        [
-            "Resonancia Magnética",
-            "Tomografía Computarizada",
-            "Radiografía",
-            "Ultrasonido",
-            "PET-CT",
-            "Mastografía",
-            "Neurorradiología",
-            "Musculoesquelético",
-            "Cardiotorácico"
-        ]
-    )
-
-    estilo = st.selectbox(
-        "Perfil radiológico",
-        [
-            "Académico",
-            "Alta Especialidad",
-            "Conciso",
-            "Fellowship",
-            "Internacional"
-        ]
-    )
-
-    st.markdown("---")
-
-    st.markdown("### Plantilla Base")
-
-    archivo_plantilla = st.file_uploader(
-        "Subir plantilla .docx",
-        type=["docx"]
-    )
-
-    plantilla_procesada = ""
-
-    if archivo_plantilla:
-        plantilla_procesada = leer_word_multimodal(archivo_plantilla)
-        st.success("Plantilla cargada")
-
-    st.markdown("---")
-
-    st.markdown("### Dictado Inteligente")
-
-    audio_dictado = st.audio_input("Grabar hallazgos")
-
-    st.markdown("---")
-
-    st.markdown(f"""
-    <div class="metric-card">
-        <h4>Estado</h4>
-        <p>🟢 Workspace operativo</p>
-        <p>{datetime.now().strftime("%d/%m/%Y %H:%M")}</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-# =========================================================
-# HEADER PRINCIPAL
-# =========================================================
-
-col1, col2 = st.columns([3,1])
-
-with col1:
-    st.title("Radiology Report Generator")
-
-with col2:
-    st.markdown("""
-    <div style="
-        text-align:right;
-        padding-top:20px;
-        color:#a1a1aa;
-        font-size:14px;
-    ">
-    AI-Powered Reporting
-    </div>
-    """, unsafe_allow_html=True)
-
-st.markdown("---")
-
-# =========================================================
-# EXPORTACIÓN
-# =========================================================
-
-if st.session_state.ultimo_reporte:
-
-    st.download_button(
-        label="📥 Exportar Informe Word",
-        data=generar_docx(st.session_state.ultimo_reporte),
-        file_name="Informe_Radiologico.docx",
-        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    )
-
-# =========================================================
-# HISTORIAL CHAT
-# =========================================================
-
-for mensaje in st.session_state.mensajes:
-
-    with st.chat_message(mensaje["role"]):
-        st.markdown(mensaje["content"])
-
-# =========================================================
-# IA ENGINE
-# =========================================================
-
-if api_key:
-
-    client = OpenAI(
-        api_key=api_key,
-        base_url="https://api.deepseek.com",
-        timeout=120.0
-    )
-
-    prompt_usuario = st.chat_input(
-        "Describe hallazgos, modifica conclusiones o dicta el informe..."
-    )
-
-    if prompt_usuario or audio_dictado:
-
-        texto_transcrito = ""
-
-        if audio_dictado:
-            texto_transcrito = transcribir_audio(audio_dictado)
-
-        entrada = ""
-
-        if texto_transcrito:
-            entrada += f"🎙️ Dictado:\\n{texto_transcrito}\\n\\n"
-
-        if prompt_usuario:
-            entrada += f"⌨️ Instrucción:\\n{prompt_usuario}"
-
-        st.session_state.mensajes.append({
-            "role":"user",
-            "content":entrada
-        })
-
-        with st.chat_message("user"):
-            st.markdown(entrada)
-
-        with st.chat_message("assistant"):
-
-            with st.spinner("Analizando hallazgos y estructurando informe..."):
-
-                prompt_sistema = f"""
-Eres Lumen Core AI.
-
-Un asistente radiológico de clase mundial especializado en generación avanzada de informes médicos.
-
-MODALIDAD:
-{modalidad}
-
-ESTILO:
-{estilo}
-
-OBJETIVOS:
-- Redacción médica elegante
-- Terminología fellowship
-- Alta precisión anatómica
-- Conclusiones sofisticadas
-- Evitar redundancias
-- Lenguaje académico profesional
-
-ESTRUCTURA:
-Técnica:
-Hallazgos:
-Impresión diagnóstica:
-
-REGLAS:
-- No inventar hallazgos
-- Mantener coherencia clínica
-- Usar lenguaje radiológico avanzado
-- Corregir gramática automáticamente
-- Optimizar claridad diagnóstica
-
-PLANTILLA:
-{plantilla_procesada if plantilla_procesada else "Sin plantilla personalizada"}
-"""
-
-                try:
-
-                    response = client.chat.completions.create(
+with col_reporte:
+    st.markdown("#### 📄 Informe Radiológico")
+    
+    # AQUÍ ESTÁ EL EDITOR: El informe es totalmente editable
+    reporte_final = st.text_area("Editor de Informe Final:", 
+                                 value=st.session_state.reporte_editable, 
+                                 height=600)
+    
+    if st.session_state.reporte_editable:
+        c1, c2 = st.columns(2)
+        with c1:
+            st.download_button("📥 Descargar Word", generar_docx(reporte_final), "Reporte_Radiologico.docx")
+        with c2:
+            st.markdown('<div class="secondary-btn">', unsafe_allow_html=True)
+            if st.button("🔄 Reformular Conclusión"):
+                client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+                with st.spinner("Mejorando conclusión..."):
+                    res_ref = client.chat.completions.create(
                         model="deepseek-chat",
-                        messages=[
-                            {
-                                "role":"system",
-                                "content":prompt_sistema
-                            },
-                            {
-                                "role":"user",
-                                "content":entrada
-                            }
-                        ],
-                        temperature=0.15,
-                        max_tokens=3500
+                        messages=[{"role": "user", "content": f"Reescribe solo la conclusión de este reporte para que sea más experta y estructurada, mantén el resto igual: {reporte_final}"}],
+                        temperature=0.3
                     )
-
-                    respuesta = response.choices[0].message.content
-
-                    st.markdown(respuesta)
-
-                    st.session_state.mensajes.append({
-                        "role":"assistant",
-                        "content":respuesta
-                    })
-
-                    st.session_state.ultimo_reporte = respuesta
-
+                    st.session_state.reporte_editable = res_ref.choices[0].message.content
                     st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
 
-                except Exception as e:
-
-                    st.error(f"Error DeepSeek: {e}")
-
-else:
-
-    st.info("Introduce tu API Key de DeepSeek para iniciar.")
+# Limpiar dictado
+if st.sidebar.button("🗑️ Limpiar Sesión"):
+    st.session_state.dictado_acumulado = ""
+    st.session_state.reporte_editable = ""
+    st.rerun()
