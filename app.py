@@ -5,46 +5,32 @@ import io
 from openai import OpenAI
 
 # ==========================================
-# 1. CONFIGURACIÓN VISUAL PREMIUM (BEAM AI)
+# 1. ESTÉTICA BEAM AI (MODO ESTACIÓN)
 # ==========================================
-st.set_page_config(page_title="Beam AI | Radiology Station", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Beam AI | Inteligencia Radiológica", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
-    
     .stApp { background-color: #0b0b0f; color: #ededed; font-family: 'Inter', sans-serif; }
-    
-    /* Panel lateral oscuro */
     [data-testid="stSidebar"] { background-color: #111116; border-right: 1px solid #1f1f2e; }
-    
-    /* Text Areas Amplios y Limpios */
     .stTextArea textarea { 
-        background-color: #16161d !important; color: #f8fafc !important; 
-        border: 1px solid #2a2a35 !important; border-radius: 8px !important;
+        background-color: #16161d !important; color: #ffffff !important; 
+        border: 1px solid #2a2a35 !important; border-radius: 12px !important;
         font-size: 15px !important; line-height: 1.6 !important;
     }
-    .stTextArea textarea:focus { border-color: #7c3aed !important; box-shadow: 0 0 0 1px #7c3aed !important; }
-
-    /* Botones de Acción (Violeta Beam AI) */
     .primary-btn > div > button { 
         background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%) !important; 
         color: white !important; border-radius: 8px !important; border: none !important;
-        font-weight: 500 !important; width: 100%; transition: all 0.3s;
+        font-weight: 600 !important; width: 100%; transition: all 0.3s; padding: 0.8rem !important;
     }
-    .primary-btn > div > button:hover { box-shadow: 0 0 15px rgba(124, 58, 237, 0.4); }
-    
-    /* Botones Secundarios */
-    .stButton>button { background: #1a1a24 !important; color: #ededed !important; border: 1px solid #2a2a35 !important; border-radius: 8px !important; }
-    .stButton>button:hover { border-color: #7c3aed !important; }
-    
+    .primary-btn > div > button:hover { box-shadow: 0 0 20px rgba(124, 58, 237, 0.5); }
     h1, h2, h3, h4 { color: #ffffff !important; font-weight: 600 !important; }
-    hr { border-color: #1f1f2e !important; }
     </style>
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. FUNCIONES CLÍNICAS NÚCLEO
+# 2. FUNCIONES DE LÓGICA MÉDICA
 # ==========================================
 def leer_plantilla(file):
     doc = Document(file)
@@ -64,121 +50,107 @@ def transcribir_voz(audio_file):
         try: return r.recognize_google(r.record(source), language="es-MX")
         except: return ""
 
-# Memoria de la sesión
 if 'dictado_actual' not in st.session_state: st.session_state.dictado_actual = ""
 if 'reporte_final' not in st.session_state: st.session_state.reporte_final = ""
 
 # ==========================================
-# 3. MENÚ LATERAL (Configuración)
+# 3. BARRA LATERAL: REGLAS Y CONFIGURACIÓN
 # ==========================================
 with st.sidebar:
     st.markdown("### 🔮 Beam AI")
-    st.caption("Radiology Workstation")
+    st.caption("Estación de Creación Multimodal")
     
-    try:
-        api_key = st.secrets["deepseek_key"]
-    except:
-        api_key = st.text_input("DeepSeek Key", type="password")
+    try: api_key = st.secrets["deepseek_key"]
+    except: api_key = st.text_input("DeepSeek Key", type="password")
     
     st.divider()
-    modalidad = st.selectbox("Estudio en curso", ["Resonancia Magnética", "Tomografía Computarizada", "Radiografía", "Ultrasonido", "PET-CT"])
-    archivo_plantilla = st.file_uploader("Subir Formato/Plantilla", type=["docx"])
-    texto_plantilla = leer_plantilla(archivo_plantilla) if archivo_plantilla else ""
+    modalidad = st.selectbox("Estudio", ["Resonancia", "Tomografía", "Rayos X", "Ultrasonido", "PET-CT"])
+    archivo_base = st.file_uploader("Subir Plantilla (.docx)", type=["docx"])
+    plantilla_txt = leer_plantilla(archivo_base) if archivo_base else ""
+    
+    st.divider()
+    st.markdown("**Reglas de Redacción (Prompts)**")
+    instrucciones_estilo = st.text_area(
+        "Instrucciones de estilo:", 
+        height=150, 
+        value="Usa un lenguaje médico formal. No utilices asteriscos para negritas. Si menciono una clasificación, expande la descripción técnica en los hallazgos.",
+        placeholder="Ej: No usar gerundios. Estilo conciso..."
+    )
 
 # ==========================================
-# 4. ÁREA DE TRABAJO PRINCIPAL
+# 4. WORKSPACE DE ALTA PRODUCTIVIDAD
 # ==========================================
 st.markdown("## 🖥️ Estación de Interpretación")
 
-# Hacemos la columna derecha mucho más ancha para simular el editor principal
-col_izquierda, col_derecha = st.columns([1, 1.8], gap="large")
+col_input, col_editor = st.columns([1, 1.8], gap="large")
 
-with col_izquierda:
-    st.markdown("#### 🎙️ Registro de Dictado")
+with col_input:
+    st.markdown("#### 🎙️ Dictado Inteligente")
+    audio_data = st.audio_input("Grabar hallazgos")
     
-    audio_data = st.audio_input("Presiona para dictar")
     if audio_data:
-        nuevo_texto = transcribir_voz(audio_data)
-        if nuevo_texto and nuevo_texto not in st.session_state.dictado_actual:
-            st.session_state.dictado_actual += " " + nuevo_texto
+        nuevo = transcribir_voz(audio_data)
+        if nuevo and nuevo not in st.session_state.dictado_actual:
+            st.session_state.dictado_actual += " " + nuevo
 
-    st.caption("Verifica y corrige términos médicos aquí (Ej. Hoja -> Hoffa):")
-    texto_editable_dictado = st.text_area(
-        "Log de transcripción:", 
-        value=st.session_state.dictado_actual, 
-        height=300, 
-        label_visibility="collapsed"
-    )
+    dictado_verificable = st.text_area("Hallazgos / Clasificaciones detectadas:", 
+                                     value=st.session_state.dictado_actual, 
+                                     height=280)
     
     st.markdown('<div class="primary-btn">', unsafe_allow_html=True)
-    if st.button("✨ Estructurar Informe"):
-        if api_key and texto_editable_dictado:
+    if st.button("✨ Procesar e Inferir"):
+        if api_key and dictado_verificable:
             client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
             
-            # PROMPT ESTRICTO PARA EVITAR ASTERISCOS Y PRIORIZAR EL DICTADO
-            prompt_maestro = f"""
-            Eres un experto radiólogo redactando un informe de {modalidad}.
+            # EL CEREBRO: PROMPT DE EXPANSIÓN Y SÍNTESIS
+            prompt_cerebro = f"""
+            Eres un experto radiólogo. Tu misión es redactar un informe de {modalidad}.
             
-            REGLAS DE FORMATO ESTRICTAS:
-            1. NO USES ASTERISCOS (** o *) para negritas bajo ninguna circunstancia.
-            2. Usa MAYÚSCULAS para los títulos de las secciones (ej. TÉCNICA, HALLAZGOS, IMPRESIÓN DIAGNÓSTICA).
-            3. Escribe texto limpio, plano y profesional.
+            COMPORTAMIENTO INTELIGENTE:
+            1. EXPANSIÓN: Si el usuario dicta una clasificación (ej. Gonartrosis grado 4, Bosniak II, Kellgren III), tú debes redactar la descripción técnica completa en la sección de HALLAZGOS basándote en los criterios médicos internacionales.
+            2. INFERENCIA: Si el usuario dicta descripciones detalladas, tú debes proponer el diagnóstico o clasificación correspondiente en la IMPRESIÓN DIAGNÓSTICA.
+            3. ESTILO: Respeta estrictamente estas reglas: {instrucciones_estilo}.
+            4. FORMATO: Títulos en MAYÚSCULAS. Prohibido usar asteriscos (**).
             
-            REGLAS CLÍNICAS:
-            1. El DICTADO DEL MÉDICO es la verdad absoluta. Si el dictado dice que algo es normal, SOBREESCRIBE cualquier patología que venga en la plantilla.
-            2. Corrige errores de transcripción anatómica por contexto.
-            
-            PLANTILLA INSTITUCIONAL: {texto_plantilla}
-            DICTADO DEL MÉDICO: {texto_editable_dictado}
+            PLANTILLA: {plantilla_txt}
+            DICTADO: {dictado_verificable}
             """
             
-            with st.spinner("Procesando hallazgos..."):
+            with st.spinner("IA Pensando y Estructurando..."):
                 try:
                     res = client.chat.completions.create(
                         model="deepseek-chat",
-                        messages=[{"role": "system", "content": prompt_maestro}],
+                        messages=[{"role": "system", "content": prompt_cerebro}],
                         temperature=0.1
                     )
                     st.session_state.reporte_final = res.choices[0].message.content
-                    st.session_state.dictado_actual = texto_editable_dictado # Guardar correcciones
                     st.rerun()
-                except Exception as e:
-                    st.error(f"Error de conexión: {e}")
+                except Exception as e: st.error(f"Error: {e}")
     st.markdown('</div>', unsafe_allow_html=True)
-    
-    if st.button("🗑️ Limpiar Dictado"):
-        st.session_state.dictado_actual = ""
-        st.rerun()
 
-with col_derecha:
-    st.markdown("#### 📄 Editor de Informe")
-    
-    # Text area gigante para trabajar cómodamente
-    reporte_editado = st.text_area(
-        "Workspace", 
-        value=st.session_state.reporte_final, 
-        height=650, 
-        label_visibility="collapsed"
-    )
+with col_editor:
+    st.markdown("#### 📄 Editor de Informe Profesional")
+    reporte_editado = st.text_area("Workspace", value=st.session_state.reporte_final, height=620, label_visibility="collapsed")
     
     if st.session_state.reporte_final:
-        col_btn1, col_btn2 = st.columns(2)
-        with col_btn1:
-            st.download_button("📥 Exportar a Word", generar_docx(reporte_editado), "Informe_BeamAI.docx")
-        with col_btn2:
+        b1, b2 = st.columns(2)
+        with b1:
+            st.download_button("📥 Exportar Word", generar_docx(reporte_editado), "Reporte_Beam_AI.docx")
+        with b2:
             if st.button("🔄 Reformular Conclusión"):
                 client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
-                with st.spinner("Sintetizando nueva conclusión..."):
+                with st.spinner("Estilizando propuesta diagnóstica..."):
                     try:
-                        prompt_ref = f"""Reescribe ÚNICAMENTE la IMPRESIÓN DIAGNÓSTICA de este texto para que sea más experta y estructurada. 
-                        NO uses asteriscos (**). Escribe en texto limpio. Mantén los hallazgos intactos: \n\n{reporte_editado}"""
+                        prompt_ref = f"""Actúa como un Jefe de Radiología. Toma el siguiente reporte y reescribe ÚNICAMENTE la sección de IMPRESIÓN DIAGNÓSTICA. 
+                        No repitas los hallazgos. Propón una síntesis elegante y jerarquizada basada en la evidencia descrita.
+                        REPORTE COMPLETO: \n\n{reporte_editado}"""
                         
                         res_ref = client.chat.completions.create(
                             model="deepseek-chat",
                             messages=[{"role": "user", "content": prompt_ref}],
                             temperature=0.3
                         )
+                        # Reemplazar solo la parte de la conclusión o actualizar el estado
                         st.session_state.reporte_final = res_ref.choices[0].message.content
                         st.rerun()
-                    except:
-                        st.error("Error al reformular.")
+                    except: st.error("Error al reformular.")
