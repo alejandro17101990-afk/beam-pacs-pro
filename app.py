@@ -5,51 +5,80 @@ import io
 from openai import OpenAI
 
 # ==========================================
-# 1. ESTÉTICA PREMIUM (ESTILO GEMINI / CHATGPT)
+# 1. MOTOR GRÁFICO CINEMATOGRÁFICO (GLASSMORPHISM & GLOW)
 # ==========================================
-st.set_page_config(page_title="Beam AI | Multimodal", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Beam AI | Core", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
     
-    /* Fondo oscuro estilo Gemini y reset de márgenes */
-    .block-container { padding-top: 1.5rem !important; max-width: 98% !important; }
-    .stApp { background-color: #0e0e11; color: #e3e3e8; font-family: 'Inter', sans-serif; }
+    /* Fondo Abismal con Luz Volumétrica Superior */
+    .stApp { 
+        background: radial-gradient(ellipse at top, #110f1c 0%, #030305 100%); 
+        color: #e2e8f0; 
+        font-family: 'Inter', sans-serif; 
+    }
+    .block-container { padding-top: 1.5rem !important; max-width: 96% !important; }
+    header { visibility: hidden; }
     
-    /* Contenedores elegantes y expanders */
-    div[data-testid="stExpander"] { background-color: #18181c !important; border: 1px solid #27272f !important; border-radius: 12px !important; }
-    div[data-testid="stExpander"] summary { color: #a2a2b0 !important; font-weight: 500 !important; }
+    /* Paneles Flotantes (Glassmorphism) */
+    div[data-testid="stExpander"] { 
+        background: rgba(255, 255, 255, 0.01) !important; 
+        backdrop-filter: blur(12px) !important;
+        border: 1px solid rgba(139, 92, 246, 0.1) !important; 
+        border-radius: 16px !important; 
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    }
+    div[data-testid="stExpander"] summary { color: #a78bfa !important; font-weight: 500 !important; }
     
-    /* Text Areas (El lienzo del documento) */
+    /* Text Areas (El Lienzo Holográfico) */
     .stTextArea textarea { 
-        background-color: #131317 !important; color: #ffffff !important; 
-        border: 1px solid #2a2a35 !important; border-radius: 16px !important;
+        background: rgba(10, 10, 15, 0.4) !important; 
+        backdrop-filter: blur(8px) !important;
+        color: #ffffff !important; 
+        border: 1px solid rgba(139, 92, 246, 0.15) !important; 
+        border-radius: 16px !important;
         font-size: 15px !important; line-height: 1.7 !important; padding: 1rem !important;
+        transition: all 0.3s ease;
     }
-    .stTextArea textarea:focus { border-color: #8b5cf6 !important; box-shadow: 0 0 0 1px #8b5cf6 !important; }
-    
-    /* Entradas de archivos y selectores */
-    .stSelectbox div[data-baseweb="select"], .stFileUploader > div { background-color: #18181c !important; border: 1px solid #27272f !important; border-radius: 12px !important; }
-    
-    /* Botón Principal (Estilo Generativo) */
-    .generar-btn > div > button { 
-        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important; 
-        color: white !important; border-radius: 12px !important; border: none !important;
-        font-weight: 600 !important; font-size: 16px !important; padding: 0.8rem !important; transition: 0.3s;
+    .stTextArea textarea:focus { 
+        border-color: #8b5cf6 !important; 
+        box-shadow: 0 0 25px rgba(139, 92, 246, 0.15) !important; 
     }
-    .generar-btn > div > button:hover { box-shadow: 0 4px 20px rgba(139, 92, 246, 0.4); transform: translateY(-2px); }
     
-    /* Botones secundarios */
-    .stButton>button { background: #1f1f26 !important; color: #e3e3e8 !important; border: 1px solid #333340 !important; border-radius: 10px !important; }
-    .stButton>button:hover { background: #2a2a35 !important; border-color: #8b5cf6 !important; }
+    /* Botón de Fusión Térmica (Generar) */
+    .btn-generar > div > button { 
+        background: linear-gradient(135deg, #4c1d95 0%, #7c3aed 100%) !important; 
+        border: 1px solid rgba(167, 139, 250, 0.3) !important;
+        box-shadow: 0 0 20px rgba(124, 58, 237, 0.25) !important;
+        color: white !important; border-radius: 12px !important; 
+        font-weight: 600 !important; font-size: 16px !important; 
+        padding: 0.8rem !important; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .btn-generar > div > button:hover { 
+        box-shadow: 0 0 35px rgba(139, 92, 246, 0.5) !important; 
+        transform: translateY(-2px); 
+    }
     
-    h1, h2, h3 { color: #ffffff !important; font-weight: 600 !important; letter-spacing: -0.5px; }
+    /* Botones Secundarios Glass */
+    .stButton>button { 
+        background: rgba(255, 255, 255, 0.03) !important; 
+        color: #a78bfa !important; 
+        border: 1px solid rgba(139, 92, 246, 0.2) !important; 
+        border-radius: 10px !important; 
+        backdrop-filter: blur(5px);
+    }
+    .stButton>button:hover { background: rgba(139, 92, 246, 0.1) !important; }
+    
+    /* Tipografía y Brillos */
+    h1, h2, h3 { color: #f8fafc !important; font-weight: 300 !important; letter-spacing: 0.5px; }
+    h2 strong { font-weight: 600; background: -webkit-linear-gradient(#c4b5fd, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
     </style>
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. MOTORES CLÍNICOS Y DE IA
+# 2. NÚCLEO LÓGICO
 # ==========================================
 def leer_plantilla(file):
     doc = Document(file)
@@ -76,63 +105,65 @@ try: api_key = st.secrets["deepseek_key"]
 except: api_key = ""
 
 # ==========================================
-# 3. INTERFAZ PRINCIPAL (LAYOUT GEMINI)
+# 3. INTERFAZ: EL SISTEMA OPERATIVO
 # ==========================================
-st.markdown("## ✨ Beam AI Studio")
+st.markdown("## Beam AI <strong>OS</strong>", unsafe_allow_html=True)
 
-# Layout asimétrico: 35% Controles / 65% Editor
 col_izq, col_der = st.columns([1.2, 2], gap="large")
 
 with col_izq:
     if not api_key:
         api_key = st.text_input("🔑 DeepSeek API Key", type="password")
         
-    # PANEL DE CONFIGURACIÓN (A la vista, no escondido)
-    with st.expander("⚙️ Parámetros del Modelo (Plantilla y Reglas)", expanded=True):
-        modalidad = st.selectbox("Modalidad", ["Resonancia Magnética", "Tomografía Computarizada", "Radiografía", "Ultrasonido", "PET-CT"])
-        archivo_base = st.file_uploader("Subir formato .docx", type=["docx"])
+    with st.expander("⎈ Parámetros de Calibración", expanded=False):
+        modalidad = st.selectbox("Protocolo", ["Resonancia Magnética", "Tomografía Computarizada", "Radiografía", "Ultrasonido", "PET-CT"])
+        archivo_base = st.file_uploader("Inyectar Estructura Base (.docx)", type=["docx"])
         plantilla_txt = leer_plantilla(archivo_base) if archivo_base else ""
         
         instrucciones_estilo = st.text_area(
-            "Prompts / Instrucciones de Estilo:", 
+            "Directrices Óptimas:", 
             height=100, 
-            value="Lenguaje médico formal. Si describo patología, propón el diagnóstico en la conclusión. Si doy el diagnóstico, expande los hallazgos anatómicos.",
-            help="Estas reglas se aplicarán a todos los informes generados."
+            value="Lenguaje médico experto. Infiere diagnósticos de la descripción. Expande clasificaciones en hallazgos anatómicos.",
         )
 
-    st.markdown("#### 💬 Área de Dictado")
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("#### ∿ Consola de Entrada Neural")
     
-    # Entrada Multimodal
-    audio_data = st.audio_input("Dictar hallazgos")
+    # UNIFICACIÓN VISUAL: Audio y Texto juntos
+    audio_data = st.audio_input("Registro Biométrico (Voz)", label_visibility="collapsed")
     if audio_data:
         nuevo = transcribir_voz(audio_data)
         if nuevo and nuevo not in st.session_state.dictado_actual:
             st.session_state.dictado_actual += " " + nuevo
 
-    dictado_verificable = st.text_area("O escribe/corrige tu dictado aquí:", 
+    dictado_verificable = st.text_area("Señal transcrita / Inyección manual:", 
                                      value=st.session_state.dictado_actual, 
-                                     height=180)
+                                     height=180,
+                                     placeholder="Ej. Articulaciones cigapofisarias, cambios osteocondrales, grasa de Hoffa...",
+                                     label_visibility="collapsed")
     
-    # Botón Principal
-    st.markdown('<div class="generar-btn">', unsafe_allow_html=True)
-    if st.button("✦ Generar Informe Radiológico"):
+    st.markdown('<div class="btn-generar">', unsafe_allow_html=True)
+    if st.button("✧ Procesar Algoritmo Clínico"):
         if api_key and dictado_verificable:
             client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
             
             prompt_cerebro = f"""
-            Eres Beam AI, un modelo radiológico experto. Redacta un informe de {modalidad}.
+            Eres el núcleo de inteligencia de Beam AI. Redacta un informe de {modalidad}.
             
-            REGLAS DE INTELIGENCIA:
-            1. SÍNTESIS/INFERENCIA: Si el usuario te describe hallazgos en detalle, agrupa la información y propón un diagnóstico concluyente y estilizado en la IMPRESIÓN DIAGNÓSTICA.
-            2. EXPANSIÓN: Si el usuario te dicta una clasificación directa (ej. Gonartrosis grado 4), tú debes redactar la descripción morfológica detallada en los HALLAZGOS.
-            3. PROMPTS DEL USUARIO: {instrucciones_estilo}
-            4. FORMATO: NO USES ASTERISCOS (**). Títulos en mayúsculas (ej. HALLAZGOS:).
+            LÓGICA MATRICIAL:
+            1. SÍNTESIS: Si recibes descripciones (ej. alteración de señal meniscal), agrupa e infiere el diagnóstico en la IMPRESIÓN DIAGNÓSTICA.
+            2. EXPANSIÓN: Si recibes una conclusión (ej. Gonartrosis IV), redacta los cambios anatómicos esperados en los HALLAZGOS.
+            3. PRECISIÓN MSK: Reconoce y respeta terminología anatómica avanzada (ej. no confundir "Hoffa" con "hoja").
+            4. REGLAS DE USUARIO: {instrucciones_estilo}
             
-            PLANTILLA BASE A RESPETAR: {plantilla_txt}
-            DICTADO/INPUT: {dictado_verificable}
+            ESTRUCTURA:
+            - NO USES ASTERISCOS (**). Títulos en MAYÚSCULAS.
+            - DEBES respetar el formato de esta plantilla base: {plantilla_txt}
+            
+            INPUT DETECTADO: {dictado_verificable}
             """
             
-            with st.spinner("Procesando multimodalidad..."):
+            with st.spinner("Sintetizando modelo de datos..."):
                 try:
                     res = client.chat.completions.create(
                         model="deepseek-chat",
@@ -141,41 +172,40 @@ with col_izq:
                     )
                     st.session_state.reporte_final = res.choices[0].message.content
                     st.rerun()
-                except Exception as e: st.error(f"Error: {e}")
+                except Exception as e: st.error(f"Error de enlace: {e}")
     st.markdown('</div>', unsafe_allow_html=True)
     
-    if st.button("🗑️ Limpiar Dictado"):
+    if st.button("⌫ Purgar Caché"):
         st.session_state.dictado_actual = ""
         st.rerun()
 
 with col_der:
-    st.markdown("#### 📄 Documento Interactivo")
+    st.markdown("#### ⬡ Proyección Holográfica del Informe")
     
     reporte_editado = st.text_area(
         "Workspace", 
         value=st.session_state.reporte_final, 
-        height=700, 
+        height=720, 
         label_visibility="collapsed"
     )
     
     if st.session_state.reporte_final:
         b1, b2 = st.columns([1, 1])
         with b1:
-            st.download_button("📥 Descargar Reporte (.docx)", generar_docx(reporte_editado), "BeamAI_Reporte.docx", use_container_width=True)
+            st.download_button("↓ Extraer Documento", generar_docx(reporte_editado), "BeamAI_Core.docx", use_container_width=True)
         with b2:
-            if st.button("✨ Estilizar Conclusión", use_container_width=True):
+            if st.button("⟡ Optimizar Criterio Diagnóstico", use_container_width=True):
                 client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
-                with st.spinner("Pensando diagnóstico..."):
+                with st.spinner("Reevaluando red neuronal..."):
                     try:
                         prompt_ref = f"""
-                        Actúa como un Jefe de Radiología de alta especialidad. 
-                        Lee este informe y MEJORA ÚNICAMENTE la IMPRESIÓN DIAGNÓSTICA.
-                        Analiza los hallazgos y propón una conclusión elegante, integradora y diagnóstica.
+                        Eres el sistema de optimización diagnóstica. 
+                        Lee este informe y MEJORA ÚNICAMENTE la IMPRESIÓN DIAGNÓSTICA (hazla más elegante, concluyente y médica).
                         
-                        REGLA ABSOLUTA: Devuelve el informe COMPLETO. Conserva la Técnica y los Hallazgos exactamente como te los entrego, y solo cambia la parte final.
-                        SIN asteriscos (**).
+                        PROTOCOLO ESTRICTO: Devuelve el informe COMPLETO. Conserva la Técnica y los Hallazgos intactos, solo sustituye el bloque final.
+                        CERO asteriscos (**).
                         
-                        REPORTE: \n\n{reporte_editado}
+                        REPORTE BASE: \n\n{reporte_editado}
                         """
                         
                         res_ref = client.chat.completions.create(
@@ -185,4 +215,4 @@ with col_der:
                         )
                         st.session_state.reporte_final = res_ref.choices[0].message.content
                         st.rerun()
-                    except Exception as e: st.error("Error al mejorar.")
+                    except Exception as e: st.error("Error estructural.")
