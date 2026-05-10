@@ -1,41 +1,67 @@
 import streamlit as st
 from docx import Document
+import speech_recognition as sr
 import io
 from openai import OpenAI
 
-# 1. CONFIGURACIÓN MODO VERCEL/PERPLEXITY
-st.set_page_config(page_title="Lumen PACS | Next Gen", layout="wide", initial_sidebar_state="expanded")
+# ==========================================
+# 1. MOTOR UI/UX (Estética Perplexity / Vercel)
+# ==========================================
+st.set_page_config(page_title="Lumen Core AI | Multimodal", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
-    /* Colores y fondo oscuro absoluto tipo Vercel */
-    .stApp { background-color: #09090b; color: #ededed; font-family: 'Inter', sans-serif; }
-    header { visibility: hidden; } /* Esconder la barra superior por defecto */
     
-    /* Sidebar minimalista */
+    /* Tema oscuro profundo y tipografía fluida */
+    .stApp { background-color: #09090b; color: #ededed; font-family: 'Inter', sans-serif; }
+    header { visibility: hidden; }
+    
+    /* Panel lateral de controles */
     [data-testid="stSidebar"] { background-color: #0c0c0f; border-right: 1px solid #1f1f22; }
     
-    /* Botones primarios limpios (Shadcn UI style) */
+    /* Cajas de herramientas y selectores */
+    .stSelectbox div[data-baseweb="select"], .stFileUploader > div { 
+        background-color: #121214 !important; border: 1px solid #27272a !important; border-radius: 8px !important; 
+    }
+    
+    /* Botones de acción */
     .stButton>button { 
         background-color: #ededed !important; color: #09090b !important; 
-        border-radius: 8px !important; font-weight: 500 !important; transition: all 0.2s; border: none !important;
+        border-radius: 8px !important; font-weight: 600 !important; border: none !important; transition: 0.2s;
     }
-    .stButton>button:hover { background-color: #d4d4d8 !important; }
+    .stButton>button:hover { background-color: #a1a1aa !important; }
     
-    /* Barra de entrada de chat tipo Perplexity */
-    [data-testid="stChatInput"] { background-color: #18181b !important; border: 1px solid #27272a !important; border-radius: 16px !important; }
+    /* Interfaz de Chat centralizada */
+    [data-testid="stChatInput"] { 
+        background-color: #18181b !important; border: 1px solid #27272a !important; 
+        border-radius: 16px !important; padding: 0.5rem !important; 
+    }
     [data-testid="stChatInput"] textarea { color: #ededed !important; }
     
-    /* Mensajes de IA */
+    /* Burbujas de IA */
+    [data-testid="stChatMessage"]:nth-child(even) { background-color: #121214 !important; border-radius: 12px; border: 1px solid #1f1f22; }
     [data-testid="stChatMessage"] { background-color: transparent !important; border: none !important; }
-    div[data-testid="stChatMessage"]:nth-child(even) { background-color: #121214 !important; border-radius: 12px; }
     
     hr { border-color: #27272a !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. FUNCIONES DE EXPORTACIÓN
+# ==========================================
+# 2. FUNCIONES DE PROCESAMIENTO (El Cerebro)
+# ==========================================
+def leer_word_multimodal(file):
+    doc = Document(file)
+    contenido = []
+    for para in doc.paragraphs:
+        if para.text.strip(): contenido.append(para.text)
+    for table in doc.tables:
+        contenido.append("\n[INSTRUCCIÓN INTERNA: FORMATO DE TABLA DETECTADO. RESPETA ESTA CUADRÍCULA]")
+        for row in table.rows:
+            fila = " | ".join([cell.text.replace('\n', ' ') for cell in row.cells])
+            contenido.append(fila)
+    return '\n'.join(contenido)
+
 def generar_docx(texto):
     doc = Document()
     for linea in texto.split('\n'):
@@ -44,70 +70,112 @@ def generar_docx(texto):
     doc.save(bio)
     return bio.getvalue()
 
-# 3. INTERFAZ LATERAL (Configuración Oculta)
+def transcribir_audio(audio_file):
+    r = sr.Recognizer()
+    with sr.AudioFile(audio_file) as source:
+        try: return r.recognize_google(r.record(source), language="es-MX")
+        except: return "[No se detectó voz clara. Verifica el micrófono o dicta de nuevo.]"
+
+# ==========================================
+# 3. ESTADOS DE MEMORIA GLOBAL
+# ==========================================
+if "mensajes" not in st.session_state:
+    st.session_state.mensajes = [{"role": "assistant", "content": "Bienvenido a Lumen Core. La plataforma multimodal está lista. Sube tu plantilla, usa el micrófono para dictar, o escribe directamente tus instrucciones."}]
+if "ultimo_reporte" not in st.session_state:
+    st.session_state.ultimo_reporte = ""
+
+# ==========================================
+# 4. PANEL LATERAL: CONTROLES MULTIMODALES
+# ==========================================
 with st.sidebar:
-    st.markdown("### ⚕️ Lumen PACS")
-    st.caption("Arquitectura V1.0")
+    st.markdown("### 🧬 Lumen Core AI")
+    st.caption("Motor Generativo Radiológico")
     
     try:
         api_key = st.secrets["deepseek_key"]
-        st.success("🟢 Conexión Segura")
+        st.success("🟢 API Conectada")
     except:
         api_key = st.text_input("DeepSeek API Key", type="password")
         
     st.divider()
-    modalidad = st.selectbox("Modalidad Activa", ["RM Rodilla", "TC Lumbar", "Radiografía", "Ultrasonido", "PET-CT"])
-    estilo = st.selectbox("Tono Clínico", ["Conciso y Directo", "Académico Detallado"])
+    st.markdown("**1. Parámetros Clínicos**")
+    modalidad = st.selectbox("Modalidad", [
+        "Resonancia Magnética", "Tomografía Computarizada", "Radiografía Convencional", 
+        "Ultrasonido", "PET-CT", "Mastografía", "Fluoroscopía", "Medicina Nuclear", "General"
+    ])
+    estilo = st.selectbox("Perfil de Redacción", [
+        "Estándar Internacional", "Académico Detallado", "Conciso y Directo", "Alta Especialidad"
+    ])
     
     st.divider()
-    st.caption("Si usas plantilla, pégala aquí:")
-    plantilla = st.text_area("Formato Base:", height=100)
+    st.markdown("**2. Documento Base**")
+    archivo_plantilla = st.file_uploader("Subir Plantilla (.docx)", type=["docx"])
+    plantilla_procesada = leer_word_multimodal(archivo_plantilla) if archivo_plantilla else ""
+    
+    st.divider()
+    st.markdown("**3. Entrada de Voz**")
+    audio_dictado = st.audio_input("Grabar hallazgos")
 
-# 4. MEMORIA DEL CHAT
-if "mensajes" not in st.session_state:
-    st.session_state.mensajes = [{"role": "assistant", "content": "Hola, Dr. López Beltrán. Estación lista. ¿Qué hallazgos procesamos hoy?"}]
-if "ultimo_reporte" not in st.session_state:
-    st.session_state.ultimo_reporte = ""
+# ==========================================
+# 5. WORKSPACE CENTRAL (Chat & Exportación)
+# ==========================================
+st.title("Generación de Informes Clínicos")
 
-# 5. RENDERIZADO DEL CHAT EN PANTALLA
-st.title("Generación Asistida")
-st.caption("Dicta tus hallazgos en lenguaje natural y la IA estructurará el informe.")
-
-# Botón de exportación rápido (solo aparece si hay un reporte)
+# Botón de exportación dinámico (flota arriba cuando hay un reporte listo)
 if st.session_state.ultimo_reporte:
     st.download_button(
-        label="📥 Descargar Último Reporte a Word", 
+        label="📥 Exportar Informe a Word (.docx)", 
         data=generar_docx(st.session_state.ultimo_reporte), 
-        file_name="Reporte_Lumen_PACS.docx", 
+        file_name="Informe_Radiologico_Lumen.docx", 
         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
     st.markdown("---")
 
-# Mostrar historial
+# Renderizar el historial de interacción
 for msg in st.session_state.mensajes:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# 6. CAJA DE ENTRADA INFERIOR (Estilo Perplexity)
+# ==========================================
+# 6. MOTOR DE INFERENCIA Y CHAT
+# ==========================================
 if api_key:
     client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com", timeout=60.0)
     
-    prompt = st.chat_input("🎙️ Escribe o dicta tus hallazgos aquí (Ej. Desgarro del menisco medial, grado 2...)")
+    # El usuario puede interactuar escribiendo o enviando el audio grabado
+    prompt_texto = st.chat_input("Escribe instrucciones o presiona Enter para procesar el audio grabado...")
     
-    if prompt:
-        # Agregar lo que el usuario escribió
-        st.session_state.mensajes.append({"role": "user", "content": prompt})
+    if prompt_texto or audio_dictado:
+        texto_transcrito = transcribir_audio(audio_dictado) if audio_dictado else ""
+        
+        # Consolidar la entrada del usuario (Voz + Texto)
+        entrada_consolidada = ""
+        if texto_transcrito: entrada_consolidada += f"🎙️ **Voz transcrita:** {texto_transcrito}\n\n"
+        if prompt_texto: entrada_consolidada += f"⌨️ **Instrucción:** {prompt_texto}"
+        
+        # Mostrar en pantalla lo que el usuario envió
+        st.session_state.mensajes.append({"role": "user", "content": entrada_consolidada})
         with st.chat_message("user"):
-            st.markdown(prompt)
+            st.markdown(entrada_consolidada)
             
         # Generar respuesta de la IA
         with st.chat_message("assistant"):
-            with st.spinner("Procesando estructura clínica..."):
+            with st.spinner("Procesando datos multimodales y estructurando informe..."):
+                
+                # El Prompt Maestro de Sistema
                 instruccion_sistema = f"""
-                Eres Lumen, un asistente de IA radiológica. 
-                Genera un informe médico de {modalidad} en estilo {estilo}.
-                Estructura: Técnica, Hallazgos, Impresión Diagnóstica.
-                Plantilla a respetar: {plantilla if plantilla else 'Ninguna'}.
+                Eres Lumen, un modelo de Inteligencia Artificial Generativa de clase mundial especializado en radiología.
+                Tarea: Crear o modificar un informe radiológico de {modalidad}.
+                Estilo de redacción: {estilo}.
+                
+                REGLAS ESTRICTAS:
+                1. Mantén un tono médico formal, objetivo y preciso.
+                2. Estructura básica obligatoria: Técnica, Hallazgos, Impresión Diagnóstica (salvo que la plantilla indique otra cosa).
+                3. Si el usuario provee instrucciones de corrección (ej. "mejora la conclusión"), aplica el cambio manteniendo el resto del reporte intacto.
+                4. NO inventes nombres de pacientes ni médicos. Usa marcadores genéricos (ej. [Nombre del Paciente]) si es necesario.
+                
+                PLANTILLA A RESPETAR:
+                {plantilla_procesada if plantilla_procesada else "No se proporcionó plantilla. Usa formato estándar."}
                 """
                 
                 try:
@@ -115,16 +183,21 @@ if api_key:
                         model="deepseek-chat",
                         messages=[
                             {"role": "system", "content": instruccion_sistema},
-                            {"role": "user", "content": prompt}
+                            {"role": "user", "content": entrada_consolidada}
                         ],
                         temperature=0.2
                     )
                     respuesta_ia = response.choices[0].message.content
                     st.markdown(respuesta_ia)
+                    
+                    # Guardar en memoria
                     st.session_state.mensajes.append({"role": "assistant", "content": respuesta_ia})
                     st.session_state.ultimo_reporte = respuesta_ia
-                    st.rerun() # Recarga la página suavemente para mostrar el botón de Word
+                    
+                    # Recargar suavemente para que aparezca el botón de exportación arriba
+                    st.rerun()
+                    
                 except Exception as e:
-                    st.error(f"Error de red: {e}")
+                    st.error(f"❌ Error de procesamiento: {e}")
 else:
-    st.info("Ingresa tu API Key en el panel izquierdo para iniciar.")
+    st.info("👈 Ingresa tu API Key en el panel lateral para activar el motor generativo.")
