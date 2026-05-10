@@ -5,37 +5,51 @@ import io
 from openai import OpenAI
 
 # ==========================================
-# 1. ESTÉTICA BEAM AI Y OPTIMIZACIÓN DE ESPACIO
+# 1. ESTÉTICA PREMIUM (ESTILO GEMINI / CHATGPT)
 # ==========================================
-st.set_page_config(page_title="Beam AI | Inteligencia Radiológica", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Beam AI | Multimodal", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
     
-    /* ELIMINAR ESPACIO MUERTO SUPERIOR */
-    .block-container { padding-top: 2rem !important; padding-bottom: 0rem !important; max-width: 95% !important; }
-    header { visibility: hidden; }
+    /* Fondo oscuro estilo Gemini y reset de márgenes */
+    .block-container { padding-top: 1.5rem !important; max-width: 98% !important; }
+    .stApp { background-color: #0e0e11; color: #e3e3e8; font-family: 'Inter', sans-serif; }
     
-    .stApp { background-color: #0b0b0f; color: #ededed; font-family: 'Inter', sans-serif; }
-    [data-testid="stSidebar"] { background-color: #111116; border-right: 1px solid #1f1f2e; }
+    /* Contenedores elegantes y expanders */
+    div[data-testid="stExpander"] { background-color: #18181c !important; border: 1px solid #27272f !important; border-radius: 12px !important; }
+    div[data-testid="stExpander"] summary { color: #a2a2b0 !important; font-weight: 500 !important; }
+    
+    /* Text Areas (El lienzo del documento) */
     .stTextArea textarea { 
-        background-color: #16161d !important; color: #ffffff !important; 
-        border: 1px solid #2a2a35 !important; border-radius: 12px !important;
-        font-size: 15px !important; line-height: 1.6 !important;
+        background-color: #131317 !important; color: #ffffff !important; 
+        border: 1px solid #2a2a35 !important; border-radius: 16px !important;
+        font-size: 15px !important; line-height: 1.7 !important; padding: 1rem !important;
     }
-    .primary-btn > div > button { 
-        background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%) !important; 
-        color: white !important; border-radius: 8px !important; border: none !important;
-        font-weight: 600 !important; width: 100%; transition: all 0.3s; padding: 0.8rem !important;
+    .stTextArea textarea:focus { border-color: #8b5cf6 !important; box-shadow: 0 0 0 1px #8b5cf6 !important; }
+    
+    /* Entradas de archivos y selectores */
+    .stSelectbox div[data-baseweb="select"], .stFileUploader > div { background-color: #18181c !important; border: 1px solid #27272f !important; border-radius: 12px !important; }
+    
+    /* Botón Principal (Estilo Generativo) */
+    .generar-btn > div > button { 
+        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important; 
+        color: white !important; border-radius: 12px !important; border: none !important;
+        font-weight: 600 !important; font-size: 16px !important; padding: 0.8rem !important; transition: 0.3s;
     }
-    .primary-btn > div > button:hover { box-shadow: 0 0 20px rgba(124, 58, 237, 0.5); }
-    h1, h2, h3, h4 { color: #ffffff !important; font-weight: 600 !important; margin-top: 0 !important; padding-top: 0 !important; }
+    .generar-btn > div > button:hover { box-shadow: 0 4px 20px rgba(139, 92, 246, 0.4); transform: translateY(-2px); }
+    
+    /* Botones secundarios */
+    .stButton>button { background: #1f1f26 !important; color: #e3e3e8 !important; border: 1px solid #333340 !important; border-radius: 10px !important; }
+    .stButton>button:hover { background: #2a2a35 !important; border-color: #8b5cf6 !important; }
+    
+    h1, h2, h3 { color: #ffffff !important; font-weight: 600 !important; letter-spacing: -0.5px; }
     </style>
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. FUNCIONES DE LÓGICA MÉDICA
+# 2. MOTORES CLÍNICOS Y DE IA
 # ==========================================
 def leer_plantilla(file):
     doc = Document(file)
@@ -58,68 +72,67 @@ def transcribir_voz(audio_file):
 if 'dictado_actual' not in st.session_state: st.session_state.dictado_actual = ""
 if 'reporte_final' not in st.session_state: st.session_state.reporte_final = ""
 
-# ==========================================
-# 3. BARRA LATERAL: REGLAS Y CONFIGURACIÓN
-# ==========================================
-with st.sidebar:
-    st.markdown("### 🔮 Beam AI")
-    st.caption("Estación de Creación Multimodal")
-    
-    try: api_key = st.secrets["deepseek_key"]
-    except: api_key = st.text_input("DeepSeek Key", type="password")
-    
-    st.divider()
-    modalidad = st.selectbox("Estudio", ["Resonancia", "Tomografía", "Rayos X", "Ultrasonido", "PET-CT"])
-    archivo_base = st.file_uploader("Subir Plantilla (.docx)", type=["docx"])
-    plantilla_txt = leer_plantilla(archivo_base) if archivo_base else ""
-    
-    st.divider()
-    st.markdown("**Reglas de Redacción (Prompts)**")
-    instrucciones_estilo = st.text_area(
-        "Instrucciones de estilo:", 
-        height=150, 
-        value="Usa un lenguaje médico formal. No utilices asteriscos para negritas. Si menciono una clasificación, expande la descripción técnica en los hallazgos.",
-        placeholder="Ej: No usar gerundios. Estilo conciso..."
-    )
+try: api_key = st.secrets["deepseek_key"]
+except: api_key = ""
 
 # ==========================================
-# 4. WORKSPACE DE ALTA PRODUCTIVIDAD
+# 3. INTERFAZ PRINCIPAL (LAYOUT GEMINI)
 # ==========================================
-# Se quitó el título gigante para aprovechar el espacio superior
-col_input, col_editor = st.columns([1, 1.8], gap="large")
+st.markdown("## ✨ Beam AI Studio")
 
-with col_input:
-    st.markdown("#### 🎙️ Dictado Inteligente")
-    audio_data = st.audio_input("Grabar hallazgos")
+# Layout asimétrico: 35% Controles / 65% Editor
+col_izq, col_der = st.columns([1.2, 2], gap="large")
+
+with col_izq:
+    if not api_key:
+        api_key = st.text_input("🔑 DeepSeek API Key", type="password")
+        
+    # PANEL DE CONFIGURACIÓN (A la vista, no escondido)
+    with st.expander("⚙️ Parámetros del Modelo (Plantilla y Reglas)", expanded=True):
+        modalidad = st.selectbox("Modalidad", ["Resonancia Magnética", "Tomografía Computarizada", "Radiografía", "Ultrasonido", "PET-CT"])
+        archivo_base = st.file_uploader("Subir formato .docx", type=["docx"])
+        plantilla_txt = leer_plantilla(archivo_base) if archivo_base else ""
+        
+        instrucciones_estilo = st.text_area(
+            "Prompts / Instrucciones de Estilo:", 
+            height=100, 
+            value="Lenguaje médico formal. Si describo patología, propón el diagnóstico en la conclusión. Si doy el diagnóstico, expande los hallazgos anatómicos.",
+            help="Estas reglas se aplicarán a todos los informes generados."
+        )
+
+    st.markdown("#### 💬 Área de Dictado")
     
+    # Entrada Multimodal
+    audio_data = st.audio_input("Dictar hallazgos")
     if audio_data:
         nuevo = transcribir_voz(audio_data)
         if nuevo and nuevo not in st.session_state.dictado_actual:
             st.session_state.dictado_actual += " " + nuevo
 
-    dictado_verificable = st.text_area("Hallazgos / Clasificaciones detectadas:", 
+    dictado_verificable = st.text_area("O escribe/corrige tu dictado aquí:", 
                                      value=st.session_state.dictado_actual, 
-                                     height=280)
+                                     height=180)
     
-    st.markdown('<div class="primary-btn">', unsafe_allow_html=True)
-    if st.button("✨ Procesar e Inferir"):
+    # Botón Principal
+    st.markdown('<div class="generar-btn">', unsafe_allow_html=True)
+    if st.button("✦ Generar Informe Radiológico"):
         if api_key and dictado_verificable:
             client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
             
             prompt_cerebro = f"""
-            Eres un experto radiólogo. Tu misión es redactar un informe de {modalidad}.
+            Eres Beam AI, un modelo radiológico experto. Redacta un informe de {modalidad}.
             
-            COMPORTAMIENTO INTELIGENTE:
-            1. EXPANSIÓN: Si el usuario dicta una clasificación (ej. Gonartrosis grado 4, Bosniak II, Kellgren III), tú debes redactar la descripción técnica completa en la sección de HALLAZGOS basándote en los criterios médicos internacionales.
-            2. INFERENCIA: Si el usuario dicta descripciones detalladas, tú debes proponer el diagnóstico o clasificación correspondiente en la IMPRESIÓN DIAGNÓSTICA.
-            3. ESTILO: Respeta estrictamente estas reglas: {instrucciones_estilo}.
-            4. FORMATO: Títulos en MAYÚSCULAS. Prohibido usar asteriscos (**).
+            REGLAS DE INTELIGENCIA:
+            1. SÍNTESIS/INFERENCIA: Si el usuario te describe hallazgos en detalle, agrupa la información y propón un diagnóstico concluyente y estilizado en la IMPRESIÓN DIAGNÓSTICA.
+            2. EXPANSIÓN: Si el usuario te dicta una clasificación directa (ej. Gonartrosis grado 4), tú debes redactar la descripción morfológica detallada en los HALLAZGOS.
+            3. PROMPTS DEL USUARIO: {instrucciones_estilo}
+            4. FORMATO: NO USES ASTERISCOS (**). Títulos en mayúsculas (ej. HALLAZGOS:).
             
-            PLANTILLA: {plantilla_txt}
-            DICTADO: {dictado_verificable}
+            PLANTILLA BASE A RESPETAR: {plantilla_txt}
+            DICTADO/INPUT: {dictado_verificable}
             """
             
-            with st.spinner("IA Pensando y Estructurando..."):
+            with st.spinner("Procesando multimodalidad..."):
                 try:
                     res = client.chat.completions.create(
                         model="deepseek-chat",
@@ -128,29 +141,42 @@ with col_input:
                     )
                     st.session_state.reporte_final = res.choices[0].message.content
                     st.rerun()
-                except Exception as e: st.error(f"Error de red: {e}")
+                except Exception as e: st.error(f"Error: {e}")
     st.markdown('</div>', unsafe_allow_html=True)
+    
+    if st.button("🗑️ Limpiar Dictado"):
+        st.session_state.dictado_actual = ""
+        st.rerun()
 
-with col_editor:
-    st.markdown("#### 📄 Editor de Informe Profesional")
-    reporte_editado = st.text_area("Workspace", value=st.session_state.reporte_final, height=650, label_visibility="collapsed")
+with col_der:
+    st.markdown("#### 📄 Documento Interactivo")
+    
+    reporte_editado = st.text_area(
+        "Workspace", 
+        value=st.session_state.reporte_final, 
+        height=700, 
+        label_visibility="collapsed"
+    )
     
     if st.session_state.reporte_final:
-        b1, b2 = st.columns(2)
+        b1, b2 = st.columns([1, 1])
         with b1:
-            st.download_button("📥 Exportar Word", generar_docx(reporte_editado), "Reporte_Beam_AI.docx")
+            st.download_button("📥 Descargar Reporte (.docx)", generar_docx(reporte_editado), "BeamAI_Reporte.docx", use_container_width=True)
         with b2:
-            if st.button("🔄 Reformular Conclusión"):
+            if st.button("✨ Estilizar Conclusión", use_container_width=True):
                 client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
-                with st.spinner("Estilizando propuesta diagnóstica e integrando documento..."):
+                with st.spinner("Pensando diagnóstico..."):
                     try:
-                        # CORRECCIÓN DE LÓGICA: Le pedimos que devuelva todo el texto para no borrar los hallazgos
-                        prompt_ref = f"""Actúa como un Jefe de Radiología. Lee el siguiente reporte y MEJORA ÚNICAMENTE la IMPRESIÓN DIAGNÓSTICA (hazla más elegante, jerarquizada y precisa).
+                        prompt_ref = f"""
+                        Actúa como un Jefe de Radiología de alta especialidad. 
+                        Lee este informe y MEJORA ÚNICAMENTE la IMPRESIÓN DIAGNÓSTICA.
+                        Analiza los hallazgos y propón una conclusión elegante, integradora y diagnóstica.
                         
-                        REGLA CRÍTICA: DEBES DEVOLVER EL REPORTE COMPLETO. No me des solo la conclusión. Devuelve la Técnica y los Hallazgos exactamente como están, y añade tu nueva Impresión Diagnóstica al final.
-                        NO uses asteriscos (**).
+                        REGLA ABSOLUTA: Devuelve el informe COMPLETO. Conserva la Técnica y los Hallazgos exactamente como te los entrego, y solo cambia la parte final.
+                        SIN asteriscos (**).
                         
-                        REPORTE ACTUAL: \n\n{reporte_editado}"""
+                        REPORTE: \n\n{reporte_editado}
+                        """
                         
                         res_ref = client.chat.completions.create(
                             model="deepseek-chat",
@@ -159,4 +185,4 @@ with col_editor:
                         )
                         st.session_state.reporte_final = res_ref.choices[0].message.content
                         st.rerun()
-                    except Exception as e: st.error(f"Error al reformular: {e}")
+                    except Exception as e: st.error("Error al mejorar.")
