@@ -4,42 +4,48 @@ import speech_recognition as sr
 import io
 from openai import OpenAI
 
-# 1. CONFIGURACIÓN DE INTERFAZ (Inspiración v0 / Perplexity)
-st.set_page_config(page_title="Lumen AI | Estación de Trabajo", layout="wide", initial_sidebar_state="collapsed")
+# ==========================================
+# 1. CONFIGURACIÓN VISUAL PREMIUM (BEAM AI)
+# ==========================================
+st.set_page_config(page_title="Beam AI | Radiology Station", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,600;1,400&display=swap');
-    .stApp { background-color: #09090b; color: #f4f4f5; font-family: 'Inter', sans-serif; }
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
     
-    /* Panel lateral elegante */
-    [data-testid="stSidebar"] { background-color: #0c0c0f; border-right: 1px solid #27272a; }
+    .stApp { background-color: #0b0b0f; color: #ededed; font-family: 'Inter', sans-serif; }
     
-    /* Contenedores de edición */
+    /* Panel lateral oscuro */
+    [data-testid="stSidebar"] { background-color: #111116; border-right: 1px solid #1f1f2e; }
+    
+    /* Text Areas Amplios y Limpios */
     .stTextArea textarea { 
-        background-color: #121214 !important; color: #ffffff !important; 
-        border: 1px solid #27272a !important; border-radius: 12px !important;
-        font-size: 16px !important; line-height: 1.6 !important;
+        background-color: #16161d !important; color: #f8fafc !important; 
+        border: 1px solid #2a2a35 !important; border-radius: 8px !important;
+        font-size: 15px !important; line-height: 1.6 !important;
     }
-    .stTextArea textarea:focus { border-color: #6366f1 !important; box-shadow: 0 0 0 1px #6366f1 !important; }
+    .stTextArea textarea:focus { border-color: #7c3aed !important; box-shadow: 0 0 0 1px #7c3aed !important; }
 
-    /* Botones Premium */
-    .stButton>button { 
-        background: #ffffff !important; color: #09090b !important; 
-        border-radius: 10px !important; font-weight: 600 !important;
-        padding: 0.6rem 2rem !important; border: none !important;
+    /* Botones de Acción (Violeta Beam AI) */
+    .primary-btn > div > button { 
+        background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%) !important; 
+        color: white !important; border-radius: 8px !important; border: none !important;
+        font-weight: 500 !important; width: 100%; transition: all 0.3s;
     }
-    .stButton>button:hover { background: #e4e4e7 !important; transform: translateY(-1px); }
+    .primary-btn > div > button:hover { box-shadow: 0 0 15px rgba(124, 58, 237, 0.4); }
     
-    /* Botón Secundario (Reformular) */
-    .secondary-btn button { background: #18181b !important; color: #ffffff !important; border: 1px solid #27272a !important; }
-
-    /* Estilo de la barra de dictado */
-    [data-testid="stChatInput"] { background-color: #121214 !important; border: 1px solid #27272a !important; border-radius: 20px !important; }
+    /* Botones Secundarios */
+    .stButton>button { background: #1a1a24 !important; color: #ededed !important; border: 1px solid #2a2a35 !important; border-radius: 8px !important; }
+    .stButton>button:hover { border-color: #7c3aed !important; }
+    
+    h1, h2, h3, h4 { color: #ffffff !important; font-weight: 600 !important; }
+    hr { border-color: #1f1f2e !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. FUNCIONES DE LÓGICA CLÍNICA
+# ==========================================
+# 2. FUNCIONES CLÍNICAS NÚCLEO
+# ==========================================
 def leer_plantilla(file):
     doc = Document(file)
     return '\n'.join([p.text for p in doc.paragraphs if p.text.strip()])
@@ -52,21 +58,22 @@ def generar_docx(texto):
     doc.save(bio)
     return bio.getvalue()
 
-def transcribir_instantaneo(audio_file):
+def transcribir_voz(audio_file):
     r = sr.Recognizer()
     with sr.AudioFile(audio_file) as source:
-        try:
-            return r.recognize_google(r.record(source), language="es-MX")
+        try: return r.recognize_google(r.record(source), language="es-MX")
         except: return ""
 
-# Inicialización de memoria
-if 'reporte_editable' not in st.session_state: st.session_state.reporte_editable = ""
-if 'dictado_acumulado' not in st.session_state: st.session_state.dictado_acumulado = ""
+# Memoria de la sesión
+if 'dictado_actual' not in st.session_state: st.session_state.dictado_actual = ""
+if 'reporte_final' not in st.session_state: st.session_state.reporte_final = ""
 
-# 3. BARRA LATERAL (Configuración y Plantillas)
+# ==========================================
+# 3. MENÚ LATERAL (Configuración)
+# ==========================================
 with st.sidebar:
-    st.markdown("### 🧬 Lumen Core")
-    st.caption("Configuración de Especialidad")
+    st.markdown("### 🔮 Beam AI")
+    st.caption("Radiology Workstation")
     
     try:
         api_key = st.secrets["deepseek_key"]
@@ -74,85 +81,11 @@ with st.sidebar:
         api_key = st.text_input("DeepSeek Key", type="password")
     
     st.divider()
-    modalidad = st.selectbox("Modalidad", ["Resonancia", "Tomografía", "Radiografía", "Ultrasonido", "PET-CT"])
-    archivo_base = st.file_uploader("Cargar Plantilla Institucional", type=["docx"])
-    plantilla_txt = leer_plantilla(archivo_base) if archivo_base else ""
-    
-    st.divider()
-    st.info("💡 **Consejo:** El dictado ahora prioriza tus hallazgos sobre lo que diga la plantilla base.")
+    modalidad = st.selectbox("Estudio en curso", ["Resonancia Magnética", "Tomografía Computarizada", "Radiografía", "Ultrasonido", "PET-CT"])
+    archivo_plantilla = st.file_uploader("Subir Formato/Plantilla", type=["docx"])
+    texto_plantilla = leer_plantilla(archivo_plantilla) if archivo_plantilla else ""
 
-# 4. WORKSPACE DE DOBLE PANEL
-col_dictado, col_reporte = st.columns([1, 1.3], gap="large")
-
-with col_dictado:
-    st.markdown("#### 🎙️ Dictado y Hallazgos")
-    
-    # Dictado de voz con feedback inmediato
-    audio_data = st.audio_input("Dictar ahora")
-    if audio_data:
-        transcripcion = transcribir_instantaneo(audio_data)
-        if transcripcion and transcripcion not in st.session_state.dictado_acumulado:
-            st.session_state.dictado_acumulado += " " + transcripcion
-    
-    # El usuario puede ver y editar lo que se ha dictado antes de procesar
-    hallazgos_finales = st.text_area("Hallazgos para procesar (puedes editarlos):", 
-                                     value=st.session_state.dictado_acumulado, 
-                                     height=250,
-                                     placeholder="Lo que dictes aparecerá aquí. Corrígelo si es necesario...")
-    
-    if st.button("✨ Generar Informe"):
-        if api_key and hallazgos_finales:
-            client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
-            
-            prompt_medico = f"""
-            Eres un radiólogo experto. Genera un informe de {modalidad}.
-            
-            INSTRUCCIÓN CRUCIAL:
-            - Prioriza los HALLAZGOS DICTADOS. 
-            - Si la PLANTILLA BASE contiene patología pero los HALLAZGOS dicen que es normal, el informe DEBE ser normal.
-            - Corrige errores fonéticos (ej: si dice 'hoja' en contexto de rodilla, cámbialo a 'Grasa de Hoffa').
-            
-            PLANTILLA BASE: {plantilla_txt}
-            HALLAZGOS DICTADOS: {hallazgos_finales}
-            """
-            
-            with st.spinner("IA redactando..."):
-                res = client.chat.completions.create(
-                    model="deepseek-chat",
-                    messages=[{"role": "system", "content": prompt_medico}],
-                    temperature=0.1
-                )
-                st.session_state.reporte_editable = res.choices[0].message.content
-                st.rerun()
-
-with col_reporte:
-    st.markdown("#### 📄 Informe Radiológico")
-    
-    # AQUÍ ESTÁ EL EDITOR: El informe es totalmente editable
-    reporte_final = st.text_area("Editor de Informe Final:", 
-                                 value=st.session_state.reporte_editable, 
-                                 height=600)
-    
-    if st.session_state.reporte_editable:
-        c1, c2 = st.columns(2)
-        with c1:
-            st.download_button("📥 Descargar Word", generar_docx(reporte_final), "Reporte_Radiologico.docx")
-        with c2:
-            st.markdown('<div class="secondary-btn">', unsafe_allow_html=True)
-            if st.button("🔄 Reformular Conclusión"):
-                client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
-                with st.spinner("Mejorando conclusión..."):
-                    res_ref = client.chat.completions.create(
-                        model="deepseek-chat",
-                        messages=[{"role": "user", "content": f"Reescribe solo la conclusión de este reporte para que sea más experta y estructurada, mantén el resto igual: {reporte_final}"}],
-                        temperature=0.3
-                    )
-                    st.session_state.reporte_editable = res_ref.choices[0].message.content
-                    st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
-
-# Limpiar dictado
-if st.sidebar.button("🗑️ Limpiar Sesión"):
-    st.session_state.dictado_acumulado = ""
-    st.session_state.reporte_editable = ""
-    st.rerun()
+# ==========================================
+# 4. ÁREA DE TRABAJO PRINCIPAL (Proporción 1:2 para mayor amplitud)
+# ==========================================
+st.markdown("## 🖥️ Estación de Interpret
