@@ -5,13 +5,18 @@ import io
 from openai import OpenAI
 
 # ==========================================
-# 1. ESTÉTICA BEAM AI (MODO ESTACIÓN)
+# 1. ESTÉTICA BEAM AI Y OPTIMIZACIÓN DE ESPACIO
 # ==========================================
 st.set_page_config(page_title="Beam AI | Inteligencia Radiológica", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+    
+    /* ELIMINAR ESPACIO MUERTO SUPERIOR */
+    .block-container { padding-top: 2rem !important; padding-bottom: 0rem !important; max-width: 95% !important; }
+    header { visibility: hidden; }
+    
     .stApp { background-color: #0b0b0f; color: #ededed; font-family: 'Inter', sans-serif; }
     [data-testid="stSidebar"] { background-color: #111116; border-right: 1px solid #1f1f2e; }
     .stTextArea textarea { 
@@ -25,7 +30,7 @@ st.markdown("""
         font-weight: 600 !important; width: 100%; transition: all 0.3s; padding: 0.8rem !important;
     }
     .primary-btn > div > button:hover { box-shadow: 0 0 20px rgba(124, 58, 237, 0.5); }
-    h1, h2, h3, h4 { color: #ffffff !important; font-weight: 600 !important; }
+    h1, h2, h3, h4 { color: #ffffff !important; font-weight: 600 !important; margin-top: 0 !important; padding-top: 0 !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -80,8 +85,7 @@ with st.sidebar:
 # ==========================================
 # 4. WORKSPACE DE ALTA PRODUCTIVIDAD
 # ==========================================
-st.markdown("## 🖥️ Estación de Interpretación")
-
+# Se quitó el título gigante para aprovechar el espacio superior
 col_input, col_editor = st.columns([1, 1.8], gap="large")
 
 with col_input:
@@ -102,7 +106,6 @@ with col_input:
         if api_key and dictado_verificable:
             client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
             
-            # EL CEREBRO: PROMPT DE EXPANSIÓN Y SÍNTESIS
             prompt_cerebro = f"""
             Eres un experto radiólogo. Tu misión es redactar un informe de {modalidad}.
             
@@ -125,12 +128,12 @@ with col_input:
                     )
                     st.session_state.reporte_final = res.choices[0].message.content
                     st.rerun()
-                except Exception as e: st.error(f"Error: {e}")
+                except Exception as e: st.error(f"Error de red: {e}")
     st.markdown('</div>', unsafe_allow_html=True)
 
 with col_editor:
     st.markdown("#### 📄 Editor de Informe Profesional")
-    reporte_editado = st.text_area("Workspace", value=st.session_state.reporte_final, height=620, label_visibility="collapsed")
+    reporte_editado = st.text_area("Workspace", value=st.session_state.reporte_final, height=650, label_visibility="collapsed")
     
     if st.session_state.reporte_final:
         b1, b2 = st.columns(2)
@@ -139,18 +142,21 @@ with col_editor:
         with b2:
             if st.button("🔄 Reformular Conclusión"):
                 client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
-                with st.spinner("Estilizando propuesta diagnóstica..."):
+                with st.spinner("Estilizando propuesta diagnóstica e integrando documento..."):
                     try:
-                        prompt_ref = f"""Actúa como un Jefe de Radiología. Toma el siguiente reporte y reescribe ÚNICAMENTE la sección de IMPRESIÓN DIAGNÓSTICA. 
-                        No repitas los hallazgos. Propón una síntesis elegante y jerarquizada basada en la evidencia descrita.
-                        REPORTE COMPLETO: \n\n{reporte_editado}"""
+                        # CORRECCIÓN DE LÓGICA: Le pedimos que devuelva todo el texto para no borrar los hallazgos
+                        prompt_ref = f"""Actúa como un Jefe de Radiología. Lee el siguiente reporte y MEJORA ÚNICAMENTE la IMPRESIÓN DIAGNÓSTICA (hazla más elegante, jerarquizada y precisa).
+                        
+                        REGLA CRÍTICA: DEBES DEVOLVER EL REPORTE COMPLETO. No me des solo la conclusión. Devuelve la Técnica y los Hallazgos exactamente como están, y añade tu nueva Impresión Diagnóstica al final.
+                        NO uses asteriscos (**).
+                        
+                        REPORTE ACTUAL: \n\n{reporte_editado}"""
                         
                         res_ref = client.chat.completions.create(
                             model="deepseek-chat",
                             messages=[{"role": "user", "content": prompt_ref}],
                             temperature=0.3
                         )
-                        # Reemplazar solo la parte de la conclusión o actualizar el estado
                         st.session_state.reporte_final = res_ref.choices[0].message.content
                         st.rerun()
-                    except: st.error("Error al reformular.")
+                    except Exception as e: st.error(f"Error al reformular: {e}")
