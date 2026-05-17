@@ -412,32 +412,6 @@ with col_izq:
                                height=120, label_visibility="collapsed",
                                placeholder="Dictado o escritura manual...\n\nEj: Desgarro horizontal menisco medial grado III Stoller, extrusión 3 mm...")
 
-    # ── Sugerencias ──
-    with st.expander("⊞  SUGERENCIAS IA", expanded=True):
-        sugs = SUGERENCIAS.get(modalidad, [])
-        chips_html = '<div class="sug-chips">'
-        for s in sugs:
-            chips_html += f'<span class="sug-chip">{s}</span>'
-        chips_html += '</div>'
-        st.markdown(chips_html, unsafe_allow_html=True)
-        st.caption("Haz clic en un chip en el editor para insertar")
-
-    # ── Clasificaciones ──
-    with st.expander("⊞  CLASIFICACIONES", expanded=False):
-        for nombre, items in CLASIFICACIONES.items():
-            st.markdown(f'<span class="plabel">{nombre}</span>', unsafe_allow_html=True)
-            for grado, desc in items:
-                key = f"cls_{nombre}_{grado}"
-                activo = st.session_state.clasif_activas.get(nombre) == f"Grado {grado}: {desc}"
-                label = f"{'✓ ' if activo else ''}{grado} · {desc}"
-                if st.button(label, key=key, use_container_width=True):
-                    if activo:
-                        del st.session_state.clasif_activas[nombre]
-                    else:
-                        st.session_state.clasif_activas[nombre] = f"Grado {grado}: {desc}"
-                    st.rerun()
-            st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
-
     # ── Configuración ──
     with st.expander("⊞  CONFIGURACIÓN", expanded=False):
         st.markdown('<span class="plabel">PLANTILLA BASE</span>', unsafe_allow_html=True)
@@ -541,15 +515,6 @@ DICTADO DEL RADIÓLOGO:
 with col_centro:
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-    # Sugerencias chips (display)
-    sugs = SUGERENCIAS.get(modalidad, [])
-    chips_html = '<div class="sug-chips" style="margin-bottom:8px">'
-    chips_html += '<span style="font-size:10px;color:#2a4060;font-family:\'IBM Plex Mono\',monospace;margin-right:4px;">Sugerencias →</span>'
-    for s in sugs:
-        chips_html += f'<span class="sug-chip">{s}</span>'
-    chips_html += '</div>'
-    st.markdown(chips_html, unsafe_allow_html=True)
-
     # Contenido inicial del editor
     contenido_inicial = st.session_state.reporte_html or """<b>RESONANCIA MAGNÉTICA DE RODILLA DERECHA</b><br>
 <br>
@@ -593,7 +558,7 @@ Adelgazamiento condral focal grado III de ICRS en platillo tibial medial (12 mm)
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
-body{{background:#08090f;font-family:Arial,sans-serif;overflow-x:hidden}}
+body{{background:#08090f;font-family:Arial,sans-serif;overflow:hidden;display:flex;flex-direction:column;height:100vh;min-height:640px}}
 
 .format-bar{{
     background:#0b0f1a;border-bottom:1px solid #1a2333;
@@ -622,9 +587,9 @@ body{{background:#08090f;font-family:Arial,sans-serif;overflow-x:hidden}}
 .cdot:hover,.cdot.sel{{border-color:#3b8bd4}}
 .flabel{{font-size:9px;color:#2a4060;font-family:'IBM Plex Mono',monospace;}}
 
-.editor-wrap{{padding:16px 20px;min-height:500px}}
+.editor-wrap{{flex:1;overflow-y:auto;padding:16px 20px;min-height:0}}
 .doc-surface{{
-    min-height:480px;padding:24px 32px;
+    min-height:100%;padding:24px 32px;
     font-family:Arial,sans-serif;font-size:14px;line-height:1.85;
     color:#d0e4f0;outline:none;
     border-radius:6px;transition:background .3s,color .3s;
@@ -677,6 +642,7 @@ body{{background:#08090f;font-family:Arial,sans-serif;overflow-x:hidden}}
     <button class="fb-btn" onclick="fmt('justifyLeft')" title="Izquierda"><i class="ti ti-align-left"></i></button>
     <button class="fb-btn" onclick="fmt('justifyCenter')" title="Centro"><i class="ti ti-align-center"></i></button>
     <button class="fb-btn" onclick="fmt('justifyRight')" title="Derecha"><i class="ti ti-align-right"></i></button>
+    <button class="fb-btn" onclick="fmt('justifyFull')" title="Justificado"><i class="ti ti-align-justified"></i></button>
   </div>
   <div class="fb-group">
     <button class="fb-btn" onclick="fmt('insertUnorderedList')" title="Viñetas"><i class="ti ti-list"></i></button>
@@ -804,7 +770,7 @@ function exportDoc() {{
 """
 
     # Renderizar editor
-    components.html(editor_html, height=680, scrolling=False)
+    components.html(editor_html, height=740, scrolling=False)
 
     # Barra de completitud externa
     if st.session_state.reporte_texto:
