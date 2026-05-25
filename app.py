@@ -1,841 +1,885 @@
 import streamlit as st
 import streamlit.components.v1 as components
 from docx import Document
-from docx.shared import Pt
+from docx.shared import Pt, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 import speech_recognition as sr
 import io
 from openai import OpenAI
 
-# ==========================================
+# ──────────────────────────────────────────────────────────────
 # CONFIG
-# ==========================================
+# ──────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Beam AI | PACS Editor v5",
+    page_title="AURA · Radiology Intelligence",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# ==========================================
-# TEMAS DE INTERFAZ (estilo Eden PACS)
-# ==========================================
+# ──────────────────────────────────────────────────────────────
+# TEMAS HOLOGRÁFICOS
+# ──────────────────────────────────────────────────────────────
 TEMAS = {
-    "Eden Dark": {
-        "app_bg": "#070c14",
-        "panel_bg": "#0a1020",
-        "panel_border": "#162030",
-        "topbar_bg": "#060e1a",
-        "topbar_border": "#112030",
-        "input_bg": "#0c1828",
-        "input_border": "#1a3050",
-        "input_color": "#7ab8d4",
-        "text_primary": "#c8dff0",
-        "text_secondary": "#3a6080",
-        "text_muted": "#1e3a58",
-        "accent": "#1a7abf",
-        "accent_light": "#4ab0e8",
-        "accent_glow": "#1a5a9a",
-        "btn_bg": "#0c1e34",
-        "btn_border": "#1a3a5a",
-        "btn_color": "#3a90c0",
-        "logo_dot": "#2a9ad4",
-        "status_color": "#1a9a5a",
-        "scrollbar": "#1a3050",
-        "expander_bg": "#090f1e",
-        "expander_border": "#142030",
-        "defs_bg": "#06101e",
-        "defs_color": "#6ab0cc",
-        "label": "Eden Dark",
+    "Void": {
+        "base": "#000308",
+        "surface": "#010a14",
+        "glass": "rgba(0, 180, 255, 0.03)",
+        "glass_border": "rgba(0, 200, 255, 0.08)",
+        "glow": "rgba(0, 180, 255, 0.15)",
+        "accent": "#00c8ff",
+        "accent2": "#0070a0",
+        "text": "#a8d8f0",
+        "text_dim": "#2a6080",
+        "text_ghost": "#0e3050",
+        "scan_line": "rgba(0,180,255,0.03)",
     },
-    "Eden Light": {
-        "app_bg": "#eef2f7",
-        "panel_bg": "#f8fafd",
-        "panel_border": "#d0dce8",
-        "topbar_bg": "#ffffff",
-        "topbar_border": "#d0dce8",
-        "input_bg": "#f0f5fa",
-        "input_border": "#c0d0e0",
-        "input_color": "#2a5a80",
-        "text_primary": "#1a3050",
-        "text_secondary": "#5a7a9a",
-        "text_muted": "#8aaccc",
-        "accent": "#1a7abf",
-        "accent_light": "#0a60a0",
-        "accent_glow": "#3a9ad4",
-        "btn_bg": "#e8f2fa",
-        "btn_border": "#b0cce0",
-        "btn_color": "#1a6090",
-        "logo_dot": "#1a7abf",
-        "status_color": "#1a8a50",
-        "scrollbar": "#c0d4e8",
-        "expander_bg": "#f0f6fc",
-        "expander_border": "#c8daea",
-        "defs_bg": "#f0f5fa",
-        "defs_color": "#2a5a7a",
-        "label": "Eden Light",
+    "Plasma": {
+        "base": "#04000a",
+        "surface": "#0c0118",
+        "glass": "rgba(160, 0, 255, 0.04)",
+        "glass_border": "rgba(180, 80, 255, 0.10)",
+        "glow": "rgba(160, 80, 255, 0.18)",
+        "accent": "#b060ff",
+        "accent2": "#6020a0",
+        "text": "#d0b0f8",
+        "text_dim": "#5030a0",
+        "text_ghost": "#200a40",
+        "scan_line": "rgba(160,0,255,0.03)",
     },
-    "PACS Clásico": {
-        "app_bg": "#0a0a0a",
-        "panel_bg": "#111111",
-        "panel_border": "#222222",
-        "topbar_bg": "#080808",
-        "topbar_border": "#1e1e1e",
-        "input_bg": "#161616",
-        "input_border": "#2a2a2a",
-        "input_color": "#aaaaaa",
-        "text_primary": "#cccccc",
-        "text_secondary": "#555555",
-        "text_muted": "#333333",
-        "accent": "#00aa66",
-        "accent_light": "#00dd88",
-        "accent_glow": "#008850",
-        "btn_bg": "#141414",
-        "btn_border": "#2a2a2a",
-        "btn_color": "#00aa66",
-        "logo_dot": "#00cc77",
-        "status_color": "#00aa66",
-        "scrollbar": "#222222",
-        "expander_bg": "#0e0e0e",
-        "expander_border": "#1e1e1e",
-        "defs_bg": "#0c0c0c",
-        "defs_color": "#888888",
-        "label": "PACS Clásico",
+    "Aurora": {
+        "base": "#000a08",
+        "surface": "#010f10",
+        "glass": "rgba(0, 255, 180, 0.03)",
+        "glass_border": "rgba(0, 220, 160, 0.09)",
+        "glow": "rgba(0, 220, 160, 0.14)",
+        "accent": "#00e8b0",
+        "accent2": "#008060",
+        "text": "#90e8d0",
+        "text_dim": "#1a6050",
+        "text_ghost": "#082820",
+        "scan_line": "rgba(0,220,160,0.025)",
     },
-    "Radiology Blue": {
-        "app_bg": "#040d18",
-        "panel_bg": "#071220",
-        "panel_border": "#0e2035",
-        "topbar_bg": "#030c16",
-        "topbar_border": "#0a1e30",
-        "input_bg": "#081828",
-        "input_border": "#102840",
-        "input_color": "#5ab8e8",
-        "text_primary": "#a8d8f8",
-        "text_secondary": "#2a6080",
-        "text_muted": "#0e3050",
-        "accent": "#0a8ad8",
-        "accent_light": "#3ab8f8",
-        "accent_glow": "#0a6ab8",
-        "btn_bg": "#081828",
-        "btn_border": "#103858",
-        "btn_color": "#2a8ac8",
-        "logo_dot": "#0ab0e8",
-        "status_color": "#0aaa70",
-        "scrollbar": "#0e3050",
-        "expander_bg": "#060f1c",
-        "expander_border": "#0a1c30",
-        "defs_bg": "#050e1a",
-        "defs_color": "#4aa8d8",
-        "label": "Radiology Blue",
-    },
-    "Warm Clinical": {
-        "app_bg": "#100e0a",
-        "panel_bg": "#181410",
-        "panel_border": "#2a2018",
-        "topbar_bg": "#0e0c08",
-        "topbar_border": "#221a10",
-        "input_bg": "#1e1812",
-        "input_border": "#302418",
-        "input_color": "#c8a878",
-        "text_primary": "#e0c8a0",
-        "text_secondary": "#705030",
-        "text_muted": "#3a2818",
-        "accent": "#c07830",
-        "accent_light": "#e0a060",
-        "accent_glow": "#a05820",
-        "btn_bg": "#1a1408",
-        "btn_border": "#2e2010",
-        "btn_color": "#b07830",
-        "logo_dot": "#d09040",
-        "status_color": "#60a050",
-        "scrollbar": "#2a2010",
-        "expander_bg": "#141008",
-        "expander_border": "#241c0e",
-        "defs_bg": "#120e08",
-        "defs_color": "#a08860",
-        "label": "Warm Clinical",
+    "Solar": {
+        "base": "#080400",
+        "surface": "#100800",
+        "glass": "rgba(255, 160, 0, 0.03)",
+        "glass_border": "rgba(255, 180, 40, 0.09)",
+        "glow": "rgba(255, 160, 0, 0.15)",
+        "accent": "#ffb030",
+        "accent2": "#a06010",
+        "text": "#f0d090",
+        "text_dim": "#704010",
+        "text_ghost": "#301800",
+        "scan_line": "rgba(255,160,0,0.025)",
     },
 }
 
-# ==========================================
-# CONSTANTES
-# ==========================================
 REGIONES = [
-    "Rodilla", "Columna lumbar", "Columna cervical", "Hombro",
-    "Cadera", "Tobillo / Pie", "Muñeca / Mano", "Codo",
-    "Cerebro", "Columna dorsal", "Tórax", "Abdomen / Pelvis",
-    "Mama", "Tiroides", "Hígado",
+    "Rodilla", "Columna lumbar", "Columna cervical", "Hombro", "Cadera",
+    "Tobillo / Pie", "Muñeca / Mano", "Codo", "Cerebro", "Columna dorsal",
+    "Tórax", "Abdomen / Pelvis", "Mama", "Tiroides", "Hígado",
 ]
 
-REGLAS_CLINICAS = """
-REGLAS CLÍNICAS ESTRICTAS — NUNCA VIOLAR:
+MODALIDADES = [
+    "Resonancia Magnética", "Tomografía Computarizada",
+    "Radiografía", "Ultrasonido", "PET-CT",
+]
 
-1. TERMINOLOGÍA PRECISA:
-   - NO uses "cambios degenerativos" como término genérico.
-     Especifica el hallazgo morfológico real: osteofitos marginales, esclerosis subcondral,
-     disminución del espacio articular, condromalacia, fibrosis periarticular, etc.
-   - NO uses "cambios crónicos" sin especificar el sustrato morfológico.
-   - USA descriptores anatómico-morfológicos: "osteofitos marginales tibiofemorales mediales",
-     "esclerosis subcondral en platillo tibial medial", "pinzamiento articular de X mm".
+REGLAS = """
+PROTOCOLO CLÍNICO AURA — REGLAS INVIOLABLES:
 
-2. TABLAS DE MEDIDAS:
-   - SOLO genera tablas si la plantilla proporcionada contiene explícitamente una sección [TABLA].
-   - Si NO hay plantilla con tabla, NO generes ninguna tabla bajo ninguna circunstancia.
-   - Si hay tabla en la plantilla, complétala con los valores mencionados en el dictado,
-     en formato Markdown (| columna | columna |).
+TERMINOLOGÍA:
+· Prohibido: "cambios degenerativos", "cambios crónicos" sin sustrato morfológico.
+· Obligatorio: descriptores morfológicos específicos — osteofitos marginales, esclerosis subcondral,
+  pinzamiento articular de X mm, condromalacia, fibrosis periarticular.
 
-3. CLASIFICACIONES:
-   - Solo incluye clasificaciones que estén directamente respaldadas por los hallazgos del dictado.
-   - No asumas grados si no tienes la información suficiente.
-   - Especifica el criterio morfológico que justifica el grado asignado.
+TABLAS:
+· Solo generar tablas si la plantilla proporcionada contiene explícitamente [TABLA].
+· Sin plantilla con tabla → cero tablas en el informe.
 
-4. IMPRESIÓN DIAGNÓSTICA:
-   - Diagnósticos específicos y morfológicamente precisos.
-   - Correlación anatómica-funcional cuando sea pertinente.
-   - Lenguaje sugerente para seguimiento: "se sugiere correlación clínica", "puede valorarse".
+CLASIFICACIONES:
+· Usar solo clasificaciones directamente respaldadas por los hallazgos del dictado.
+· Especificar el criterio morfológico que justifica cada grado.
+· No asumir grados sin evidencia suficiente.
+
+IMPRESIÓN:
+· Diagnósticos morfológicamente precisos, no genéricos.
+· Lenguaje sugerente para manejo: "se sugiere correlación clínica", "puede valorarse".
 """
 
-# ==========================================
+# ──────────────────────────────────────────────────────────────
 # ESTADO
-# ==========================================
-ESTADO_DEFAULTS = {
+# ──────────────────────────────────────────────────────────────
+DEFAULTS = {
+    "tema": "Void",
     "dictado": "",
     "reporte_html": "",
     "reporte_texto": "",
-    "definiciones_resultado": "",
-    "editor_height": 580,
-    "tema_actual": "Eden Dark",
+    "defs_resultado": "",
+    "editor_h": 560,
+    "modo": "dictado",   # "dictado" | "hallazgos"
+    "plantilla_txt": "",
+    "tiene_tabla": False,
 }
-for k, v in ESTADO_DEFAULTS.items():
+for k, v in DEFAULTS.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-# ==========================================
+# ──────────────────────────────────────────────────────────────
 # HELPERS
-# ==========================================
+# ──────────────────────────────────────────────────────────────
 def leer_plantilla(file):
-    """Lee párrafos Y tablas del docx. Las tablas se marcan con [TABLA n]."""
     doc = Document(file)
-    secciones = []
-    tabla_count = 0
+    partes = []
+    n = 0
     try:
-        import docx.text.paragraph as _p
-        import docx.table as _t
-        for element in doc.element.body:
-            tag = element.tag.split('}')[-1]
+        import docx.text.paragraph as _pp
+        import docx.table as _tt
+        for el in doc.element.body:
+            tag = el.tag.split('}')[-1]
             if tag == 'p':
-                para = _p.Paragraph(element, doc)
-                texto = para.text.strip()
-                if texto:
-                    secciones.append(texto)
+                p = _pp.Paragraph(el, doc)
+                t = p.text.strip()
+                if t: partes.append(t)
             elif tag == 'tbl':
-                tabla_count += 1
-                tabla = _t.Table(element, doc)
-                filas_txt = []
-                for row in tabla.rows:
-                    celdas = [c.text.strip() for c in row.cells]
-                    filas_txt.append("| " + " | ".join(celdas) + " |")
-                secciones.append(f"[TABLA {tabla_count}]\n" + "\n".join(filas_txt) + "\n[/TABLA]")
+                n += 1
+                tbl = _tt.Table(el, doc)
+                rows = ["| " + " | ".join(c.text.strip() for c in r.cells) + " |" for r in tbl.rows]
+                partes.append(f"[TABLA {n}]\n" + "\n".join(rows) + "\n[/TABLA]")
     except Exception:
-        secciones = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
-    return "\n".join(secciones)
+        partes = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+    return "\n".join(partes), n > 0
 
 def texto_a_html(texto):
-    """Convierte texto del modelo a HTML. Las tablas solo si vienen del modelo."""
     import re
-    lines = []
-    in_table = False
-    table_rows = []
-
+    lines, buf, in_tbl = [], [], False
     for line in texto.split("\n"):
         s = line.strip()
         if not s:
-            if in_table:
-                # Cerrar tabla
-                html_table = '<table style="border-collapse:collapse;width:100%;margin:8px 0">'
-                for i, row in enumerate(table_rows):
-                    cols = [c.strip() for c in row.strip("|").split("|")]
-                    tag = "th" if i == 0 else "td"
-                    html_table += "<tr>" + "".join(f"<{tag} style='border:1px solid #ccc;padding:4px 10px'>{c}</{tag}>" for c in cols) + "</tr>"
-                html_table += "</table>"
-                lines.append(html_table)
-                in_table = False
-                table_rows = []
+            if in_tbl:
+                lines.append(_tbl_html(buf)); buf = []; in_tbl = False
             lines.append("<br>")
         elif re.match(r'^\|.+\|$', s):
-            if all(c in '-| ' for c in s):
-                continue  # saltar separador de tabla markdown
-            in_table = True
-            table_rows.append(s)
+            if all(c in '-| :' for c in s): continue
+            in_tbl = True; buf.append(s)
         else:
-            if in_table:
-                html_table = '<table style="border-collapse:collapse;width:100%;margin:8px 0">'
-                for i, row in enumerate(table_rows):
-                    cols = [c.strip() for c in row.strip("|").split("|")]
-                    tag = "th" if i == 0 else "td"
-                    html_table += "<tr>" + "".join(f"<{tag} style='border:1px solid #ccc;padding:4px 10px'>{c}</{tag}>" for c in cols) + "</tr>"
-                html_table += "</table>"
-                lines.append(html_table)
-                in_table = False
-                table_rows = []
+            if in_tbl:
+                lines.append(_tbl_html(buf)); buf = []; in_tbl = False
             if s.isupper() and len(s) < 70 and not s.startswith("•"):
                 lines.append(f"<b>{s}</b><br>")
             elif s.startswith("•"):
                 lines.append(f"<li>{s[1:].strip()}</li>")
             else:
                 lines.append(f"{s}<br>")
-
-    if in_table and table_rows:
-        html_table = '<table style="border-collapse:collapse;width:100%;margin:8px 0">'
-        for i, row in enumerate(table_rows):
-            cols = [c.strip() for c in row.strip("|").split("|")]
-            tag = "th" if i == 0 else "td"
-            html_table += "<tr>" + "".join(f"<{tag} style='border:1px solid #ccc;padding:4px 10px'>{c}</{tag}>" for c in cols) + "</tr>"
-        html_table += "</table>"
-        lines.append(html_table)
-
+    if in_tbl and buf: lines.append(_tbl_html(buf))
     return "\n".join(lines)
 
-def generar_docx(html_texto):
-    from html.parser import HTMLParser
+def _tbl_html(rows):
+    h = '<table style="border-collapse:collapse;width:100%;margin:8px 0;font-size:12px">'
+    for i, row in enumerate(rows):
+        cols = [c.strip() for c in row.strip("|").split("|")]
+        tag = "th" if i == 0 else "td"
+        h += "<tr>" + "".join(f"<{tag} style='border:1px solid #ccc;padding:4px 9px'>{c}</{tag}>" for c in cols) + "</tr>"
+    return h + "</table>"
 
-    class HTMLtoDocx(HTMLParser):
+def generar_docx(html):
+    from html.parser import HTMLParser
+    import re
+
+    class P(HTMLParser):
         def __init__(self):
             super().__init__()
             self.doc = Document()
             s = self.doc.styles["Normal"]
-            s.font.name = "Arial"
-            s.font.size = Pt(11)
-            self.bold = self.italic = self.underline = False
-            self.current_para = None
-            self.in_table = False
-            self.table_rows = []
-            self.current_row = []
-            self.current_cell = ""
+            s.font.name = "Calibri"; s.font.size = Pt(11)
+            self.b = self.i = self.u = False
+            self.para = None; self.in_tbl = False
+            self.rows = []; self.row = []; self.cell = ""
 
         def handle_starttag(self, tag, attrs):
-            if tag in ("b","strong"):    self.bold = True
-            elif tag in ("i","em"):      self.italic = True
-            elif tag == "u":             self.underline = True
-            elif tag in ("p","div"):     self.current_para = self.doc.add_paragraph()
+            if tag in ("b","strong"):   self.b = True
+            elif tag in ("i","em"):     self.i = True
+            elif tag == "u":            self.u = True
+            elif tag in ("p","div"):    self.para = self.doc.add_paragraph()
             elif tag == "br":
-                if not self.current_para: self.current_para = self.doc.add_paragraph()
-            elif tag == "li":            self.current_para = self.doc.add_paragraph(style="List Bullet")
-            elif tag == "table":         self.in_table = True; self.table_rows = []
-            elif tag == "tr":            self.current_row = []
-            elif tag in ("td","th"):     self.current_cell = ""
-            elif tag == "hr":            self.doc.add_paragraph()
+                if not self.para: self.para = self.doc.add_paragraph()
+            elif tag == "li":           self.para = self.doc.add_paragraph(style="List Bullet")
+            elif tag == "table":        self.in_tbl = True; self.rows = []
+            elif tag == "tr":           self.row = []
+            elif tag in ("td","th"):    self.cell = ""
 
         def handle_endtag(self, tag):
-            if tag in ("b","strong"):    self.bold = False
-            elif tag in ("i","em"):      self.italic = False
-            elif tag == "u":             self.underline = False
-            elif tag in ("td","th"):
-                self.current_row.append(self.current_cell); self.current_cell = ""
-            elif tag == "tr":            self.table_rows.append(self.current_row)
+            if tag in ("b","strong"):   self.b = False
+            elif tag in ("i","em"):     self.i = False
+            elif tag == "u":            self.u = False
+            elif tag in ("td","th"):    self.row.append(self.cell); self.cell = ""
+            elif tag == "tr":           self.rows.append(self.row)
             elif tag == "table":
-                self.in_table = False
-                if self.table_rows:
-                    cols = max(len(r) for r in self.table_rows)
-                    tbl = self.doc.add_table(rows=len(self.table_rows), cols=cols)
-                    tbl.style = "Table Grid"
-                    for i, row in enumerate(self.table_rows):
-                        for j, ct in enumerate(row):
-                            if j < cols: tbl.rows[i].cells[j].text = ct
-                self.table_rows = []
+                self.in_tbl = False
+                if self.rows:
+                    cols = max(len(r) for r in self.rows)
+                    t = self.doc.add_table(rows=len(self.rows), cols=cols)
+                    t.style = "Table Grid"
+                    for i, r in enumerate(self.rows):
+                        for j, c in enumerate(r):
+                            if j < cols: t.rows[i].cells[j].text = c
+                self.rows = []
 
         def handle_data(self, data):
-            text = data.strip()
-            if not text: return
-            if self.in_table: self.current_cell += text; return
-            if self.current_para is None: self.current_para = self.doc.add_paragraph()
-            run = self.current_para.add_run(text + " ")
-            run.bold = self.bold; run.italic = self.italic; run.underline = self.underline
+            t = data.strip()
+            if not t: return
+            if self.in_tbl: self.cell += t; return
+            if not self.para: self.para = self.doc.add_paragraph()
+            run = self.para.add_run(t + " ")
+            run.bold = self.b; run.italic = self.i; run.underline = self.u
 
-    import re
-    clean = html_texto.replace("\n", " ").strip()
-    parser = HTMLtoDocx()
+    parser = P()
     try:
-        parser.feed(clean)
+        parser.feed(html.replace("\n", " ").strip())
     except Exception:
-        doc = Document()
-        plain = re.sub(r"<[^>]+>", "", html_texto)
-        for line in plain.split("\n"): doc.add_paragraph(line)
-        bio = io.BytesIO(); doc.save(bio); return bio.getvalue()
+        d = Document()
+        for line in re.sub(r"<[^>]+>", "", html).split("\n"):
+            d.add_paragraph(line)
+        bio = io.BytesIO(); d.save(bio); return bio.getvalue()
     bio = io.BytesIO(); parser.doc.save(bio); return bio.getvalue()
 
-def transcribir_voz(audio_file):
+def transcribir(audio):
     r = sr.Recognizer()
-    with sr.AudioFile(audio_file) as source:
-        try: return r.recognize_google(r.record(source), language="es-MX")
+    with sr.AudioFile(audio) as src:
+        try: return r.recognize_google(r.record(src), language="es-MX")
         except: return ""
 
-def calcular_completitud(texto):
-    secciones = ["TÉCNICA", "HALLAZGOS", "IMPRESIÓN"]
-    encontradas = sum(1 for s in secciones if s in texto.upper())
-    palabras = len(texto.split())
-    return min(100, int((encontradas / 3) * 60 + min(palabras / 150, 1) * 40))
+def completitud(texto):
+    secs = sum(1 for s in ["TÉCNICA","HALLAZGOS","IMPRESIÓN"] if s in texto.upper())
+    words = len(texto.split())
+    return min(100, int((secs/3)*60 + min(words/150,1)*40))
 
-# ==========================================
-# API KEY
-# ==========================================
 try:
     api_key = st.secrets["deepseek_key"]
 except:
     api_key = ""
 
-# ==========================================
-# TEMA ACTIVO
-# ==========================================
-T = TEMAS[st.session_state.tema_actual]
+T = TEMAS[st.session_state.tema]
 
-# ==========================================
-# CSS DINÁMICO SEGÚN TEMA
-# ==========================================
+# ──────────────────────────────────────────────────────────────
+# CSS HOLOGRÁFICO
+# ──────────────────────────────────────────────────────────────
 st.markdown(f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400;500&display=swap');
 
-html, .stApp {{ background: {T['app_bg']} !important; }}
+/* ── RESET & BASE ── */
+html, body, .stApp {{ background: {T['base']} !important; }}
 .block-container {{ padding: 0 !important; max-width: 100% !important; }}
-header, footer {{ display: none !important; }}
-[data-testid="stToolbar"] {{ display: none !important; }}
+header, footer, [data-testid="stToolbar"] {{ display: none !important; }}
+* {{ font-family: 'JetBrains Mono', monospace !important; }}
+
+/* ── SCAN LINE EFFECT ── */
+.stApp::before {{
+    content: '';
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background: repeating-linear-gradient(
+        0deg,
+        {T['scan_line']} 0px,
+        transparent 1px,
+        transparent 3px
+    );
+}}
 
 /* ── TOPBAR ── */
-.beam-topbar {{
-    background: {T['topbar_bg']}; border-bottom: 1px solid {T['topbar_border']};
-    padding: 9px 20px; display: flex; align-items: center; gap: 14px;
+.aura-bar {{
     position: sticky; top: 0; z-index: 9999;
+    background: {T['base']};
+    border-bottom: 1px solid {T['glass_border']};
+    padding: 0 24px;
+    height: 44px;
+    display: flex; align-items: center; gap: 0;
 }}
-.beam-logo {{
-    font-family: 'Inter', sans-serif; font-weight: 600; font-size: 13px;
-    color: {T['text_primary']}; letter-spacing: .15em;
-    display: flex; align-items: center; gap: 7px;
+.aura-logo {{
+    font-family: 'Space Grotesk', sans-serif !important;
+    font-weight: 300; font-size: 17px; letter-spacing: .35em;
+    color: {T['accent']}; text-transform: uppercase;
+    display: flex; align-items: center; gap: 10px;
 }}
-.ldot {{ width: 7px; height: 7px; border-radius: 50%; background: {T['logo_dot']}; display: inline-block; box-shadow: 0 0 6px {T['logo_dot']}; }}
-.tbadge {{
-    font-size: 10px; color: {T['accent_light']}; background: {T['btn_bg']};
-    border: 1px solid {T['btn_border']}; border-radius: 3px; padding: 2px 8px;
-    font-family: 'IBM Plex Mono', monospace; letter-spacing: .04em;
+.aura-pulse {{
+    width: 6px; height: 6px; border-radius: 50%;
+    background: {T['accent']};
+    box-shadow: 0 0 8px {T['accent']}, 0 0 20px {T['accent']};
+    animation: pulse 2.4s ease-in-out infinite;
 }}
-.tstat {{
-    margin-left: auto; font-size: 10px; color: {T['status_color']};
-    font-family: 'IBM Plex Mono', monospace; display: flex; align-items: center; gap: 5px;
+@keyframes pulse {{
+    0%, 100% {{ opacity: 1; transform: scale(1); }}
+    50% {{ opacity: .4; transform: scale(.7); }}
 }}
-.sdot {{ width: 5px; height: 5px; border-radius: 50%; background: {T['status_color']}; display: inline-block; box-shadow: 0 0 4px {T['status_color']}; }}
+.aura-sep {{
+    width: 1px; height: 18px;
+    background: {T['glass_border']};
+    margin: 0 18px;
+}}
+.aura-meta {{
+    font-size: 9px; letter-spacing: .2em; color: {T['text_dim']};
+    text-transform: uppercase;
+}}
+.aura-status {{
+    margin-left: auto; display: flex; align-items: center; gap: 7px;
+    font-size: 9px; letter-spacing: .15em; color: {T['text_dim']};
+}}
+.aura-online {{
+    width: 5px; height: 5px; border-radius: 50%;
+    background: {T['accent']};
+    box-shadow: 0 0 6px {T['accent']};
+}}
 
-/* ── TEMA SELECTOR PILLS ── */
-.tema-pills {{ display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px; }}
-.tema-pill {{
-    font-size: 10px; font-family: 'IBM Plex Mono', monospace;
-    color: {T['text_secondary']}; background: {T['btn_bg']};
-    border: 1px solid {T['btn_border']}; border-radius: 3px;
-    padding: 2px 8px; cursor: pointer;
+/* ── GLASS PANELS ── */
+.glass-panel {{
+    background: {T['glass']};
+    border: 1px solid {T['glass_border']};
+    border-radius: 2px;
+    backdrop-filter: blur(8px);
+    position: relative;
 }}
-.tema-pill.active {{ color: {T['accent_light']}; border-color: {T['accent']}; background: {T['btn_bg']}; }}
-
-/* ── PANEL LABELS ── */
-.plabel {{
-    font-size: 9px !important; letter-spacing: .18em !important;
-    color: {T['text_muted']} !important; text-transform: uppercase !important;
-    font-family: 'IBM Plex Mono', monospace !important;
-    margin-bottom: 2px !important; margin-top: 0 !important; display: block;
+.glass-panel::before {{
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, {T['accent']}, transparent);
+    opacity: .3;
 }}
 
-/* ── INPUTS ── */
+/* ── SECTION LABELS ── */
+.sec-lbl {{
+    font-size: 8px !important;
+    letter-spacing: .25em !important;
+    color: {T['text_ghost']} !important;
+    text-transform: uppercase !important;
+    margin-bottom: 4px !important;
+    display: block;
+}}
+
+/* ── SELECTBOX ── */
 [data-testid="stSelectbox"] > div > div {{
-    background: {T['input_bg']} !important; border: 1px solid {T['input_border']} !important;
-    border-radius: 5px !important; color: {T['input_color']} !important;
-    font-family: 'IBM Plex Mono', monospace !important; font-size: 11px !important;
+    background: transparent !important;
+    border: 1px solid {T['glass_border']} !important;
+    border-radius: 2px !important;
+    color: {T['text']} !important;
+    font-size: 11px !important;
 }}
-[data-testid="stSelectbox"] > div > div:hover {{ border-color: {T['accent']} !important; }}
+[data-testid="stSelectbox"] > div > div:hover {{
+    border-color: {T['accent2']} !important;
+}}
 
+/* ── TEXTAREA ── */
 .stTextArea textarea {{
-    background: {T['input_bg']} !important; border: 1px solid {T['input_border']} !important;
-    border-radius: 6px !important; color: {T['input_color']} !important;
-    font-family: 'IBM Plex Mono', monospace !important; font-size: 11px !important; line-height: 1.55 !important;
+    background: transparent !important;
+    border: 1px solid {T['glass_border']} !important;
+    border-radius: 2px !important;
+    color: {T['text']} !important;
+    font-size: 11px !important;
+    line-height: 1.6 !important;
+    caret-color: {T['accent']} !important;
 }}
-.stTextArea textarea:focus {{ border-color: {T['accent']} !important; box-shadow: none !important; }}
+.stTextArea textarea:focus {{
+    border-color: {T['accent2']} !important;
+    box-shadow: 0 0 12px {T['glow']} !important;
+}}
+.stTextArea textarea::placeholder {{ color: {T['text_ghost']} !important; }}
 
+/* ── TEXT INPUT ── */
 [data-testid="stTextInput"] input {{
-    background: {T['input_bg']} !important; border: 1px solid {T['input_border']} !important;
-    border-radius: 5px !important; color: {T['input_color']} !important;
-    font-family: 'IBM Plex Mono', monospace !important; font-size: 11px !important;
+    background: transparent !important;
+    border: 1px solid {T['glass_border']} !important;
+    border-radius: 2px !important;
+    color: {T['text']} !important;
+    font-size: 11px !important;
+    caret-color: {T['accent']} !important;
+}}
+[data-testid="stTextInput"] input:focus {{
+    border-color: {T['accent2']} !important;
+    box-shadow: 0 0 10px {T['glow']} !important;
 }}
 
+/* ── AUDIO INPUT ── */
 [data-testid="stAudioInput"] {{
-    background: {T['input_bg']} !important; border: 1px solid {T['input_border']} !important;
-    border-radius: 7px !important;
+    background: transparent !important;
+    border: 1px solid {T['glass_border']} !important;
+    border-radius: 2px !important;
 }}
+
+/* ── FILE UPLOADER ── */
 [data-testid="stFileUploader"] {{
-    background: {T['input_bg']} !important; border: 1px dashed {T['input_border']} !important;
-    border-radius: 6px !important;
+    background: transparent !important;
+    border: 1px dashed {T['glass_border']} !important;
+    border-radius: 2px !important;
 }}
 [data-testid="stFileUploader"] * {{
-    color: {T['text_secondary']} !important; font-family: 'IBM Plex Mono', monospace !important; font-size: 10px !important;
+    color: {T['text_dim']} !important;
+    font-size: 10px !important;
+}}
+[data-testid="stFileUploader"]:hover {{
+    border-color: {T['accent2']} !important;
 }}
 
-/* ── BOTÓN PRINCIPAL ── */
-.btn-main > div > button {{
-    background: {T['accent_glow']} !important; border: 1px solid {T['accent']} !important;
-    color: {T['accent_light']} !important; font-family: 'Inter', sans-serif !important;
-    font-weight: 600 !important; font-size: 12px !important; letter-spacing: .06em !important;
-    border-radius: 6px !important; padding: .7rem 1rem !important; width: 100% !important;
+/* ── PRIMARY BUTTON ── */
+.btn-primary > div > button {{
+    background: transparent !important;
+    border: 1px solid {T['accent']} !important;
+    border-radius: 2px !important;
+    color: {T['accent']} !important;
+    font-size: 10px !important;
+    letter-spacing: .2em !important;
+    text-transform: uppercase !important;
+    padding: .65rem 1rem !important;
+    width: 100% !important;
+    transition: all .2s !important;
+    box-shadow: 0 0 16px {T['glow']} !important;
 }}
-.btn-main > div > button:hover {{ filter: brightness(1.15) !important; }}
+.btn-primary > div > button:hover {{
+    background: {T['glass']} !important;
+    box-shadow: 0 0 30px {T['glow']}, inset 0 0 20px {T['glow']} !important;
+}}
 
-/* ── BOTONES SECUNDARIOS ── */
+/* ── SECONDARY BUTTONS ── */
 .stButton > button {{
-    background: {T['btn_bg']} !important; border: 1px solid {T['btn_border']} !important;
-    color: {T['btn_color']} !important; font-family: 'IBM Plex Mono', monospace !important;
-    font-size: 10px !important; border-radius: 5px !important;
+    background: transparent !important;
+    border: 1px solid {T['glass_border']} !important;
+    border-radius: 2px !important;
+    color: {T['text_dim']} !important;
+    font-size: 9px !important;
+    letter-spacing: .12em !important;
+    text-transform: uppercase !important;
 }}
-.stButton > button:hover {{ border-color: {T['accent']} !important; color: {T['accent_light']} !important; }}
+.stButton > button:hover {{
+    border-color: {T['accent2']} !important;
+    color: {T['text']} !important;
+}}
 
 /* ── EXPANDERS ── */
 [data-testid="stExpander"] {{
-    background: {T['expander_bg']} !important; border: 1px solid {T['expander_border']} !important;
-    border-radius: 6px !important; margin-bottom: 3px !important;
+    background: {T['glass']} !important;
+    border: 1px solid {T['glass_border']} !important;
+    border-radius: 2px !important;
+    margin-bottom: 3px !important;
 }}
 [data-testid="stExpander"] summary {{
-    color: {T['btn_color']} !important; font-family: 'IBM Plex Mono', monospace !important;
-    font-size: 10px !important; letter-spacing: .06em !important;
+    color: {T['text_dim']} !important;
+    font-size: 9px !important;
+    letter-spacing: .18em !important;
+    text-transform: uppercase !important;
 }}
-[data-testid="stExpander"] summary:hover {{ color: {T['accent_light']} !important; }}
+[data-testid="stExpander"] summary:hover {{ color: {T['text']} !important; }}
+[data-testid="stExpander"] summary svg {{ display: none !important; }}
 
 /* ── DOWNLOAD ── */
 [data-testid="stDownloadButton"] > button {{
-    background: {T['btn_bg']} !important; border: 1px solid {T['btn_border']} !important;
-    color: {T['btn_color']} !important; font-family: 'IBM Plex Mono', monospace !important;
-    font-size: 10px !important; border-radius: 5px !important;
+    background: transparent !important;
+    border: 1px solid {T['glass_border']} !important;
+    border-radius: 2px !important;
+    color: {T['text_dim']} !important;
+    font-size: 9px !important;
+    letter-spacing: .12em !important;
 }}
-[data-testid="stDownloadButton"] > button:hover {{ color: {T['accent_light']} !important; }}
+[data-testid="stDownloadButton"] > button:hover {{
+    border-color: {T['accent']} !important;
+    color: {T['accent']} !important;
+    box-shadow: 0 0 12px {T['glow']} !important;
+}}
 
 /* ── SLIDER ── */
 [data-testid="stSlider"] > div {{ padding: 0 !important; }}
-
-/* ── DEFINICIONES ── */
-.defs-box {{
-    font-family: 'IBM Plex Mono', monospace; font-size: 11px;
-    color: {T['defs_color']}; line-height: 1.45;
-    background: {T['defs_bg']}; padding: 14px 16px;
-    border-radius: 6px; border: 1px solid {T['expander_border']};
-    white-space: pre-wrap;
+[data-testid="stSlider"] [role="slider"] {{
+    background: {T['accent']} !important;
+    box-shadow: 0 0 8px {T['accent']} !important;
 }}
 
-::-webkit-scrollbar {{ width: 3px; height: 3px; }}
-::-webkit-scrollbar-track {{ background: {T['app_bg']}; }}
-::-webkit-scrollbar-thumb {{ background: {T['scrollbar']}; border-radius: 2px; }}
-hr {{ border-color: {T['panel_border']} !important; margin: 6px 0 !important; }}
+/* ── DEFS BOX ── */
+.defs-box {{
+    font-size: 10.5px; line-height: 1.45;
+    color: {T['text_dim']}; white-space: pre-wrap;
+    padding: 14px 16px;
+    background: {T['glass']};
+    border: 1px solid {T['glass_border']};
+    border-radius: 2px;
+}}
+.defs-box b {{ color: {T['text']}; }}
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar {{ width: 2px; height: 2px; }}
+::-webkit-scrollbar-track {{ background: transparent; }}
+::-webkit-scrollbar-thumb {{ background: {T['accent2']}; border-radius: 1px; }}
+
+/* ── MISC ── */
+hr {{ border: none; border-top: 1px solid {T['glass_border']} !important; margin: 6px 0 !important; }}
+[data-testid="stSpinner"] > div {{ border-top-color: {T['accent']} !important; }}
 </style>
 """, unsafe_allow_html=True)
 
-# ==========================================
+# ──────────────────────────────────────────────────────────────
 # TOPBAR
-# ==========================================
+# ──────────────────────────────────────────────────────────────
 st.markdown(f"""
-<div class="beam-topbar">
-    <div class="beam-logo"><span class="ldot"></span> BEAM AI</div>
-    <span class="tbadge">v5.0 · PACS Editor · {T['label']}</span>
-    <div class="tstat"><span class="sdot"></span> DeepSeek · activo</div>
+<div class="aura-bar">
+  <div class="aura-logo">
+    <div class="aura-pulse"></div>
+    AURA
+  </div>
+  <div class="aura-sep"></div>
+  <span class="aura-meta">Radiology Intelligence · v1.0</span>
+  <div class="aura-status">
+    <div class="aura-online"></div>
+    DEEPSEEK · ONLINE
+  </div>
 </div>
 """, unsafe_allow_html=True)
 
-# ==========================================
+# ──────────────────────────────────────────────────────────────
 # LAYOUT
-# ==========================================
-col_izq, col_centro = st.columns([1, 2.7], gap="small")
+# ──────────────────────────────────────────────────────────────
+col_l, col_r = st.columns([1, 2.8], gap="small")
 
-# ─────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════
 # PANEL IZQUIERDO
-# ─────────────────────────────────────────
-with col_izq:
-    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+# ══════════════════════════════════════════════════════════════
+with col_l:
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
+    # API Key
     if not api_key:
-        api_key = st.text_input("API Key", type="password",
-                                label_visibility="collapsed",
-                                placeholder="sk-... DeepSeek API Key")
+        st.markdown('<span class="sec-lbl">API KEY</span>', unsafe_allow_html=True)
+        api_key = st.text_input("k", type="password", label_visibility="collapsed",
+                                placeholder="sk- ···  DeepSeek API Key")
+        st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 
-    # ── Selector de tema ──
-    with st.expander("⊞  TEMA DE INTERFAZ", expanded=False):
-        st.markdown('<span class="plabel">APARIENCIA</span>', unsafe_allow_html=True)
-        for nombre_tema in TEMAS:
-            activo = nombre_tema == st.session_state.tema_actual
-            if st.button(
-                f"{'▶ ' if activo else '  '}{nombre_tema}",
-                key=f"tema_{nombre_tema}",
-                use_container_width=True
-            ):
-                st.session_state.tema_actual = nombre_tema
-                st.rerun()
+    # ── ESTUDIO ──
+    with st.expander("▸  ESTUDIO", expanded=True):
+        st.markdown('<span class="sec-lbl">MODALIDAD</span>', unsafe_allow_html=True)
+        modalidad = st.selectbox("M", MODALIDADES, label_visibility="collapsed")
+        st.markdown('<span class="sec-lbl">REGIÓN</span>', unsafe_allow_html=True)
+        region = st.selectbox("R", REGIONES, label_visibility="collapsed")
 
-    with st.expander("⊞  MODALIDAD & REGIÓN", expanded=True):
-        st.markdown('<span class="plabel">MODALIDAD</span>', unsafe_allow_html=True)
-        modalidad = st.selectbox("Modalidad", [
-            "Resonancia Magnética", "Tomografía Computarizada",
-            "Radiografía", "Ultrasonido", "PET-CT"
-        ], label_visibility="collapsed")
-        st.markdown('<span class="plabel">REGIÓN ANATÓMICA</span>', unsafe_allow_html=True)
-        region = st.selectbox("Región", REGIONES, label_visibility="collapsed")
+    # ── MODO DE ENTRADA ──
+    with st.expander("▸  MODO DE ENTRADA", expanded=True):
+        modo_label = "DICTADO DE VOZ" if st.session_state.modo == "dictado" else "HALLAZGOS ESCRITOS"
+        st.markdown(f'<span class="sec-lbl">{modo_label}</span>', unsafe_allow_html=True)
 
-    with st.expander("⊞  DICTADO DE VOZ", expanded=True):
-        audio_data = st.audio_input("Voz", label_visibility="collapsed")
-        if audio_data:
-            nuevo = transcribir_voz(audio_data)
-            if nuevo and nuevo not in st.session_state.dictado:
-                st.session_state.dictado += " " + nuevo
-        st.markdown('<span class="plabel">SEÑAL TRANSCRITA</span>', unsafe_allow_html=True)
-        dictado = st.text_area("Dictado", value=st.session_state.dictado,
-                               height=130, label_visibility="collapsed",
-                               placeholder="Dictado o escritura manual...\n\nEj: Desgarro horizontal menisco medial Stoller III, extrusión 3 mm, osteofitos marginales tibiales...")
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("⊙ VOZ", use_container_width=True):
+                st.session_state.modo = "dictado"; st.rerun()
+        with c2:
+            if st.button("⊙ TEXTO", use_container_width=True):
+                st.session_state.modo = "hallazgos"; st.rerun()
 
-    with st.expander("⊞  CONFIGURACIÓN", expanded=False):
-        st.markdown('<span class="plabel">PLANTILLA BASE (.docx)</span>', unsafe_allow_html=True)
-        archivo_base = st.file_uploader("Plantilla", type=["docx"], label_visibility="collapsed")
-        plantilla_txt = leer_plantilla(archivo_base) if archivo_base else ""
-        tiene_tabla = "[TABLA" in plantilla_txt if plantilla_txt else False
-        if plantilla_txt:
+        if st.session_state.modo == "dictado":
+            audio = st.audio_input("_", label_visibility="collapsed")
+            if audio:
+                txt = transcribir(audio)
+                if txt and txt not in st.session_state.dictado:
+                    st.session_state.dictado += " " + txt
+        else:
+            st.markdown('<span class="sec-lbl">HALLAZGOS / IMPRESIÓN</span>', unsafe_allow_html=True)
+
+        dictado = st.text_area(
+            "_", value=st.session_state.dictado, height=140,
+            label_visibility="collapsed",
+            placeholder="Dicta o escribe hallazgos, diagnósticos o ambos...\n\nEj: Desgarro horizontal menisco medial Stoller III, extrusión 3 mm. Osteofitos marginales tibiofemorales mediales."
+        )
+
+    # ── PLANTILLA ──
+    with st.expander("▸  PLANTILLA", expanded=False):
+        st.markdown('<span class="sec-lbl">ARCHIVO .DOCX</span>', unsafe_allow_html=True)
+        f = st.file_uploader("_", type=["docx"], label_visibility="collapsed")
+        if f:
+            st.session_state.plantilla_txt, st.session_state.tiene_tabla = leer_plantilla(f)
+            icono = "◈  CON TABLAS" if st.session_state.tiene_tabla else "◇  CARGADA"
             st.markdown(
-                f'<span style="font-size:10px;color:{"#2ecc71" if tiene_tabla else T["btn_color"]};'
-                f'font-family:\'IBM Plex Mono\',monospace;">'
-                f'{"✓ Plantilla con tablas" if tiene_tabla else "✓ Plantilla cargada"}</span>',
+                f'<span style="font-size:9px;letter-spacing:.15em;color:{T["accent"]}">{icono}</span>',
                 unsafe_allow_html=True
             )
-
-        st.markdown('<span class="plabel">DIRECTRICES DE ESTILO</span>', unsafe_allow_html=True)
-        instrucciones = st.text_area("Directrices", height=65, label_visibility="collapsed",
-                                     value="Lenguaje médico experto. Sin asteriscos. Solo clasificaciones respaldadas por los hallazgos.")
-
-    with st.expander("⊞  TAMAÑO DEL EDITOR", expanded=False):
-        nueva_altura = st.slider(
-            "Altura", min_value=300, max_value=1200,
-            value=st.session_state.editor_height, step=50,
-            label_visibility="collapsed"
-        )
-        if nueva_altura != st.session_state.editor_height:
-            st.session_state.editor_height = nueva_altura
-            st.rerun()
-        st.markdown(
-            f'<span style="font-size:10px;color:{T["text_secondary"]};font-family:\'IBM Plex Mono\',monospace;">'
-            f'Altura actual: {st.session_state.editor_height}px</span>',
-            unsafe_allow_html=True
+        st.markdown('<span class="sec-lbl">DIRECTRICES</span>', unsafe_allow_html=True)
+        instrucciones = st.text_area(
+            "_", height=56, label_visibility="collapsed",
+            value="Lenguaje médico experto. Sin asteriscos. Solo clasificaciones respaldadas."
         )
 
+    # ── APARIENCIA ──
+    with st.expander("▸  APARIENCIA", expanded=False):
+        st.markdown('<span class="sec-lbl">TEMA</span>', unsafe_allow_html=True)
+        for nombre in TEMAS:
+            activo = nombre == st.session_state.tema
+            acc = TEMAS[nombre]["accent"]
+            lbl = f"{'▶ ' if activo else '  '}{nombre.upper()}"
+            if st.button(lbl, key=f"t_{nombre}", use_container_width=True):
+                st.session_state.tema = nombre; st.rerun()
+
+        st.markdown('<span class="sec-lbl">ALTURA EDITOR</span>', unsafe_allow_html=True)
+        h = st.slider("_", 280, 1100, st.session_state.editor_h, 40,
+                       label_visibility="collapsed")
+        if h != st.session_state.editor_h:
+            st.session_state.editor_h = h; st.rerun()
+
+    # ── CTA ──
     st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
-    st.markdown('<div class="btn-main">', unsafe_allow_html=True)
-    procesar = st.button("⬡  PROCESAR INFORME", use_container_width=True)
+    st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
+    procesar = st.button("◈  GENERAR INFORME", use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
-
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("⌫ Purgar", use_container_width=True):
-            st.session_state.dictado = ""
-            st.rerun()
-    with c2:
-        if st.button("⟳ Limpiar", use_container_width=True):
+    st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+    ca, cb = st.columns(2)
+    with ca:
+        if st.button("PURGAR", use_container_width=True):
+            st.session_state.dictado = ""; st.rerun()
+    with cb:
+        if st.button("LIMPIAR", use_container_width=True):
             st.session_state.reporte_html = ""
-            st.session_state.reporte_texto = ""
-            st.rerun()
+            st.session_state.reporte_texto = ""; st.rerun()
 
-# ─────────────────────────────────────────
-# PROCESAMIENTO IA
-# ─────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────
+# PROCESAMIENTO
+# ──────────────────────────────────────────────────────────────
 if procesar:
     if api_key and dictado.strip():
         client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
-
-        instruccion_tabla = (
-            "La plantilla contiene tablas. Complétalas con los valores del dictado en formato Markdown."
+        plantilla = st.session_state.plantilla_txt
+        tiene_tabla = st.session_state.tiene_tabla
+        tabla_instruc = (
+            "La plantilla contiene tablas marcadas con [TABLA]. Complétalas con valores del dictado en Markdown."
             if tiene_tabla else
-            "NO hay tablas en la plantilla. NO generes ninguna tabla en el informe bajo ninguna circunstancia."
+            "NO hay tablas en la plantilla. PROHIBIDO generar tablas bajo ninguna circunstancia."
         )
-
         prompt = f"""
-Eres Beam AI, asistente experto en interpretación radiológica.
-Redacta un informe de {modalidad} para región: {region}.
+Eres AURA, sistema de inteligencia radiológica. Redacta un informe de {modalidad} — región: {region}.
 
-{REGLAS_CLINICAS}
+{REGLAS}
 
-INSTRUCCIÓN SOBRE TABLAS: {instruccion_tabla}
+TABLAS: {tabla_instruc}
 
-PLANTILLA BASE:
-{plantilla_txt if plantilla_txt else "TÉCNICA / HALLAZGOS / IMPRESIÓN DIAGNÓSTICA"}
+PLANTILLA:
+{plantilla if plantilla else "TÉCNICA / HALLAZGOS / IMPRESIÓN DIAGNÓSTICA"}
 
-DIRECTRICES ADICIONALES: {instrucciones}
+DIRECTRICES: {instrucciones}
 
-DICTADO DEL RADIÓLOGO:
+ENTRADA DEL RADIÓLOGO:
 {dictado}
 """
-        with st.spinner("Sintetizando modelo de datos..."):
+        with st.spinner(""):
             try:
                 res = client.chat.completions.create(
                     model="deepseek-chat",
                     messages=[{"role": "system", "content": prompt}],
                     temperature=0.1
                 )
-                texto = res.choices[0].message.content
-                st.session_state.reporte_texto = texto
-                st.session_state.reporte_html = texto_a_html(texto)
+                txt = res.choices[0].message.content
+                st.session_state.reporte_texto = txt
+                st.session_state.reporte_html = texto_a_html(txt)
                 st.rerun()
             except Exception as e:
-                st.error(f"Error: {e}")
+                st.error(f"{e}")
     elif not api_key:
-        st.warning("Ingresa tu API Key.")
+        st.warning("API Key requerida")
     else:
-        st.warning("Ingresa dictado o descripción clínica.")
+        st.warning("Ingresa dictado o hallazgos")
 
-# ─────────────────────────────────────────
-# PANEL CENTRAL — Editor
-# ─────────────────────────────────────────
-with col_centro:
-    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+# ══════════════════════════════════════════════════════════════
+# PANEL DERECHO — EDITOR
+# ══════════════════════════════════════════════════════════════
+with col_r:
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-    contenido_inicial = st.session_state.reporte_html or """<b>RESONANCIA MAGNÉTICA DE RODILLA DERECHA</b><br>
-<br><b>TÉCNICA</b><br>
-Secuencias multiplanares en T1, DP con supresión grasa (DPFS), T2 y STIR en planos axial, coronal y sagital, sin contraste.<br>
-<br><b>HALLAZGOS</b><br>
-<br><b>MENISCOS</b><br>
-Menisco medial: alteración de señal grado III de Stoller en cuerpo y cuerno posterior, compatible con desgarro horizontal. Extrusión de 3 mm en el plano coronal.<br>
-Menisco lateral: morfología e intensidad de señal conservadas.<br>
-<br><b>LIGAMENTOS</b><br>
-Ligamento cruzado anterior con señal heterogénea en tercio proximal, compatible con lesión parcial grado I de Hope &amp; Feagin. LCP, LCM y LCL sin alteraciones.<br>
-<br><b>CARTÍLAGO</b><br>
-Adelgazamiento condral focal grado III de ICRS en platillo tibial medial, extensión de 12 mm. Esclerosis subcondral y edema óseo reactivo asociado.<br>
-<br><b>ESPACIO ARTICULAR</b><br>
-Pinzamiento femorotibial medial de 3 mm. Osteofitos marginales en cóndilos femorales y platillos tibiales de predominio medial.<br>
-<br><b>IMPRESIÓN DIAGNÓSTICA</b><br>
-<li>Desgarro horizontal de menisco medial, grado III de Stoller, con extrusión de 3 mm.</li>
-<li>Lesión parcial del LCA, grado I de Hope &amp; Feagin.</li>
-<li>Condropatía grado III ICRS en compartimento femorotibial medial con esclerosis subcondral. Compatible con gonartrosis grado II de Kellgren-Lawrence.</li>"""
+    contenido = st.session_state.reporte_html or """<b>RESONANCIA MAGNÉTICA · RODILLA DERECHA</b><br><br>
+<b>TÉCNICA</b><br>
+Secuencias multiplanares T1, DP con supresión grasa, T2 y STIR en planos axial, coronal y sagital. Sin contraste.<br><br>
+<b>HALLAZGOS</b><br><br>
+<b>MENISCOS</b><br>
+Menisco medial: señal grado III de Stoller en cuerpo y cuerno posterior — desgarro horizontal. Extrusión de 3 mm en plano coronal.<br>
+Menisco lateral: morfología e intensidad conservadas.<br><br>
+<b>LIGAMENTOS</b><br>
+LCA: señal heterogénea en tercio proximal, lesión parcial grado I (Hope &amp; Feagin). LCP, LCM, LCL íntegros.<br><br>
+<b>CARTÍLAGO</b><br>
+Adelgazamiento condral focal grado III ICRS en platillo tibial medial (12 mm). Esclerosis subcondral y edema óseo reactivo.<br><br>
+<b>ESPACIO ARTICULAR</b><br>
+Pinzamiento femorotibial medial de 3 mm. Osteofitos marginales en cóndilos femorales y platillos tibiales, predominio medial.<br><br>
+<b>IMPRESIÓN DIAGNÓSTICA</b><br>
+<li>Desgarro horizontal de menisco medial, Stoller grado III, extrusión de 3 mm — significativo.</li>
+<li>Lesión parcial LCA grado I Hope &amp; Feagin.</li>
+<li>Condropatía grado III ICRS en compartimento medial con esclerosis subcondral. Gonartrosis grado II Kellgren-Lawrence.</li>"""
 
-    editor_h = st.session_state.editor_height
-    iframe_h = editor_h + 95
+    eH = st.session_state.editor_h
+    frameH = eH + 92
 
-    # Colores del editor pasados como variables JS
-    editor_html = f"""<!DOCTYPE html>
+    html_editor = f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
-html,body{{height:{iframe_h}px;overflow:hidden;display:flex;flex-direction:column;
-  background:{T['panel_bg']};font-family:'Inter',Arial,sans-serif}}
+:root{{
+  --base:{T['base']};--surface:{T['surface']};
+  --glass:{T['glass']};--border:{T['glass_border']};
+  --glow:{T['glow']};--accent:{T['accent']};--accent2:{T['accent2']};
+  --text:{T['text']};--dim:{T['text_dim']};--ghost:{T['text_ghost']};
+}}
+html,body{{
+  height:{frameH}px;overflow:hidden;
+  display:flex;flex-direction:column;
+  background:var(--base);
+  font-family:'JetBrains Mono',monospace;
+}}
 
-/* Barra de formato */
-.fmt{{
-  flex-shrink:0;background:{T['topbar_bg']};
-  border-bottom:1px solid {T['topbar_border']};
-  padding:4px 10px;display:flex;align-items:center;gap:3px;
+/* scanlines */
+body::before{{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:repeating-linear-gradient(0deg,{T['scan_line']} 0px,transparent 1px,transparent 3px);
+}}
+
+/* ── TOOLBAR ── */
+.tb{{
+  flex-shrink:0;position:relative;z-index:10;
+  background:var(--base);
+  border-bottom:1px solid var(--border);
+  padding:4px 12px;
+  display:flex;align-items:center;gap:4px;
   flex-wrap:nowrap;overflow-x:auto;
 }}
-.fg{{display:flex;align-items:center;gap:2px;padding-right:6px;
-     border-right:1px solid {T['panel_border']};flex-shrink:0}}
-.fg:last-child{{border-right:none}}
-.fb{{background:none;border:1px solid transparent;color:{T['text_secondary']};
-    font-size:11px;padding:3px 5px;border-radius:3px;cursor:pointer;
-    transition:all .1s;min-width:22px;text-align:center;line-height:1;
-    font-family:'Inter',Arial,sans-serif}}
-.fb:hover{{background:{T['btn_bg']};border-color:{T['btn_border']};color:{T['accent_light']}}}
-.fb.on{{background:{T['btn_bg']};border-color:{T['accent']};color:{T['accent_light']}}}
-.fs{{background:{T['input_bg']};border:1px solid {T['input_border']};
-    color:{T['input_color']};font-size:10px;font-family:'IBM Plex Mono',monospace;
-    padding:2px 4px;border-radius:3px;outline:none;appearance:none;cursor:pointer}}
-.cd{{width:13px;height:13px;border-radius:50%;cursor:pointer;
-    border:2px solid transparent;transition:border-color .1s;flex-shrink:0}}
-.cd:hover,.cd.on{{border-color:{T['accent_light']}}}
-.fl{{font-size:9px;color:{T['text_muted']};font-family:'IBM Plex Mono',monospace;white-space:nowrap}}
-
-/* Zona edición */
-.ew{{flex:1;overflow-y:auto;padding:12px 16px;min-height:0;
-    background:{T['panel_bg']}}}
-.doc{{
-  min-height:100%;padding:20px 28px;outline:none;
-  font-family:Arial,sans-serif;font-size:13px;line-height:1.75;
-  color:#1a1a1a;background:#ffffff;
-  border-radius:4px;transition:background .2s,color .2s;
+.tg{{display:flex;align-items:center;gap:2px;padding-right:8px;border-right:1px solid var(--ghost);flex-shrink:0}}
+.tg:last-child{{border-right:none}}
+.tb-btn{{
+  background:none;border:1px solid transparent;
+  color:var(--dim);font-size:10px;
+  padding:3px 5px;border-radius:1px;cursor:pointer;
+  transition:all .15s;min-width:22px;text-align:center;
+  font-family:'JetBrains Mono',monospace;letter-spacing:.02em;
 }}
-.doc li{{margin-left:18px;margin-bottom:2px}}
-.doc b,.doc strong{{font-weight:700}}
-.doc hr{{border:none;border-top:1px solid #ccc;margin:8px 0}}
-.doc table{{border-collapse:collapse;width:100%;margin:8px 0;font-size:12px}}
-.doc table td,.doc table th{{border:1px solid #ccc;padding:4px 8px;text-align:left}}
-.doc table th{{background:#f0f4f8;font-weight:600}}
+.tb-btn:hover{{border-color:var(--border);color:var(--text);}}
+.tb-btn.on{{border-color:var(--accent2);color:var(--accent);box-shadow:0 0 6px var(--glow);}}
+.tb-sel{{
+  background:transparent;border:1px solid var(--border);
+  color:var(--dim);font-size:9px;letter-spacing:.05em;
+  font-family:'JetBrains Mono',monospace;
+  padding:2px 4px;border-radius:1px;outline:none;appearance:none;cursor:pointer;
+}}
+.tb-sel:focus{{border-color:var(--accent2);}}
+.cd{{
+  width:12px;height:12px;border-radius:50%;cursor:pointer;
+  border:1px solid transparent;transition:all .12s;flex-shrink:0;
+}}
+.cd:hover,.cd.on{{border-color:var(--accent);box-shadow:0 0 5px var(--glow);}}
+.tl{{font-size:8px;letter-spacing:.2em;color:var(--ghost);white-space:nowrap;}}
 
-/* Action strip */
-.as{{flex-shrink:0;background:{T['topbar_bg']};border-top:1px solid {T['topbar_border']};
-    padding:6px 10px;display:flex;align-items:center;gap:5px;flex-wrap:wrap}}
-.ab{{background:{T['btn_bg']};border:1px solid {T['btn_border']};color:{T['btn_color']};
-    font-size:10px;font-family:'IBM Plex Mono',monospace;
-    padding:4px 9px;border-radius:4px;cursor:pointer;
-    transition:all .1s;display:flex;align-items:center;gap:3px}}
-.ab:hover{{color:{T['accent_light']};border-color:{T['accent']}}}
-.ab.p{{color:{T['accent_light']};border-color:{T['accent']};background:{T['btn_bg']}}}
-.cw{{margin-left:auto;display:flex;align-items:center;gap:5px}}
-.cbg{{width:60px;height:2px;background:{T['panel_border']};border-radius:1px;overflow:hidden}}
-.cbf{{height:100%;background:{T['accent']};border-radius:1px;transition:width .4s}}
-.cp{{font-size:9px;color:{T['text_secondary']};font-family:'IBM Plex Mono',monospace}}
+/* ── EDITOR AREA ── */
+.ew{{
+  flex:1;overflow-y:auto;
+  padding:16px 20px;min-height:0;
+  background:var(--surface);
+  scrollbar-width:thin;scrollbar-color:var(--accent2) transparent;
+}}
+.ew::-webkit-scrollbar{{width:2px;}}
+.ew::-webkit-scrollbar-thumb{{background:var(--accent2);}}
+
+.doc{{
+  min-height:100%;padding:24px 32px;
+  outline:none;border-radius:1px;
+  font-family:'JetBrains Mono',monospace;
+  font-size:12.5px;line-height:1.8;
+  color:#1a1a1a;background:#ffffff;
+  transition:background .25s,color .25s;
+}}
+.doc b,.doc strong{{font-weight:600;}}
+.doc li{{margin-left:18px;margin-bottom:2px;}}
+.doc hr{{border:none;border-top:1px solid #e0e0e0;margin:10px 0;}}
+.doc table{{border-collapse:collapse;width:100%;margin:8px 0;font-size:11.5px;}}
+.doc td,.doc th{{border:1px solid #e0e0e0;padding:4px 10px;}}
+.doc th{{background:#f8f8f8;font-weight:600;}}
+
+/* ── ACTION STRIP ── */
+.as{{
+  flex-shrink:0;position:relative;z-index:10;
+  background:var(--base);
+  border-top:1px solid var(--border);
+  padding:6px 12px;
+  display:flex;align-items:center;gap:6px;
+}}
+.as::before{{
+  content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--accent),transparent);
+  opacity:.2;
+}}
+.as-btn{{
+  background:transparent;border:1px solid var(--border);
+  color:var(--dim);font-size:8.5px;letter-spacing:.18em;
+  text-transform:uppercase;
+  padding:4px 10px;border-radius:1px;cursor:pointer;
+  transition:all .15s;display:flex;align-items:center;gap:4px;
+  font-family:'JetBrains Mono',monospace;
+}}
+.as-btn:hover{{border-color:var(--accent2);color:var(--text);box-shadow:0 0 8px var(--glow);}}
+.as-btn.prime{{border-color:var(--accent);color:var(--accent);box-shadow:0 0 10px var(--glow);}}
+.prog{{margin-left:auto;display:flex;align-items:center;gap:6px;}}
+.prog-bg{{width:56px;height:1px;background:var(--ghost);position:relative;}}
+.prog-fill{{position:absolute;top:0;left:0;height:100%;background:var(--accent);transition:width .4s;box-shadow:0 0 4px var(--accent);}}
+.prog-pct{{font-size:8px;letter-spacing:.1em;color:var(--dim);}}
 </style>
 </head>
 <body>
 
-<div class="fmt">
-  <div class="fg">
-    <select class="fs" id="fnt" onchange="applyFont(this.value)" style="width:82px">
-      <option value="Arial" selected>Arial</option>
-      <option value="'Courier New'">Courier New</option>
-      <option value="Georgia">Georgia</option>
-      <option value="'Times New Roman'">Times New Roman</option>
-      <option value="'IBM Plex Mono'">Mono</option>
+<div class="tb">
+  <div class="tg">
+    <select class="tb-sel" id="fnt" onchange="applyFont(this.value)" style="width:80px">
+      <option value="'JetBrains Mono',monospace" selected>JetBrains</option>
+      <option value="'Space Grotesk',sans-serif">Grotesk</option>
+      <option value="'Georgia',serif">Georgia</option>
+      <option value="'Calibri',sans-serif">Calibri</option>
+      <option value="'Arial',sans-serif">Arial</option>
+      <option value="'Times New Roman',serif">Times</option>
     </select>
-    <select class="fs" id="sz" onchange="applySize(this.value)" style="width:40px">
+    <select class="tb-sel" id="sz" onchange="applySize(this.value)" style="width:38px">
       <option value="9">9</option><option value="10">10</option>
       <option value="11">11</option><option value="12">12</option>
-      <option value="13" selected>13</option><option value="14">14</option>
-      <option value="15">15</option><option value="16">16</option><option value="18">18</option>
+      <option value="12.5" selected>12.5</option>
+      <option value="13">13</option><option value="14">14</option>
+      <option value="16">16</option><option value="18">18</option>
     </select>
   </div>
-  <div class="fg">
-    <button class="fb" id="bB" onclick="fmt('bold')" title="Negrita"><b>B</b></button>
-    <button class="fb" id="bI" onclick="fmt('italic')" title="Cursiva"><i>I</i></button>
-    <button class="fb" id="bU" onclick="fmt('underline')" title="Subrayado"><u>U</u></button>
+  <div class="tg">
+    <button class="tb-btn" id="bB" onclick="fmt('bold')" title="Negrita"><b>B</b></button>
+    <button class="tb-btn" id="bI" onclick="fmt('italic')" title="Cursiva"><i>I</i></button>
+    <button class="tb-btn" id="bU" onclick="fmt('underline')" title="Subrayado"><u>U</u></button>
   </div>
-  <div class="fg">
-    <button class="fb" onclick="fmt('justifyLeft')" title="Izquierda"><i class="ti ti-align-left"></i></button>
-    <button class="fb" onclick="fmt('justifyCenter')" title="Centro"><i class="ti ti-align-center"></i></button>
-    <button class="fb" onclick="fmt('justifyRight')" title="Derecha"><i class="ti ti-align-right"></i></button>
-    <button class="fb" onclick="fmt('justifyFull')" title="Justificado"><i class="ti ti-align-justified"></i></button>
+  <div class="tg">
+    <button class="tb-btn" onclick="fmt('justifyLeft')" title="Izquierda"><i class="ti ti-align-left"></i></button>
+    <button class="tb-btn" onclick="fmt('justifyCenter')" title="Centro"><i class="ti ti-align-center"></i></button>
+    <button class="tb-btn" onclick="fmt('justifyRight')" title="Derecha"><i class="ti ti-align-right"></i></button>
+    <button class="tb-btn" onclick="fmt('justifyFull')" title="Justificado"><i class="ti ti-align-justified"></i></button>
   </div>
-  <div class="fg">
-    <button class="fb" onclick="fmt('insertUnorderedList')" title="Viñetas"><i class="ti ti-list"></i></button>
-    <button class="fb" onclick="fmt('insertOrderedList')" title="Numerada"><i class="ti ti-list-numbers"></i></button>
-    <button class="fb" onclick="insHR()" title="Separador">—</button>
+  <div class="tg">
+    <button class="tb-btn" onclick="fmt('insertUnorderedList')" title="Viñetas"><i class="ti ti-list"></i></button>
+    <button class="tb-btn" onclick="fmt('insertOrderedList')" title="Numerada"><i class="ti ti-list-numbers"></i></button>
+    <button class="tb-btn" onclick="insHR()" title="Separador">—</button>
   </div>
-  <div class="fg" style="align-items:center;gap:4px">
-    <span class="fl">Fondo:</span>
-    <div class="cd on" style="background:#ffffff;border-color:{T['accent_light']}" onclick="setBg(this,'#ffffff','#1a1a1a')" title="Blanco"></div>
-    <div class="cd" style="background:#0a1018" onclick="setBg(this,'#0a1018','#d0e4f0')" title="Clínico"></div>
-    <div class="cd" style="background:#f5f0e8" onclick="setBg(this,'#f5f0e8','#2a1a0a')" title="Pergamino"></div>
-    <div class="cd" style="background:#f0f4f8" onclick="setBg(this,'#f0f4f8','#1a2a3a')" title="Gris suave"></div>
-    <div class="cd" style="background:#000409" onclick="setBg(this,'#000409','#e8f4ff')" title="Contraste"></div>
+  <div class="tg" style="gap:5px;align-items:center;">
+    <span class="tl">FONDO</span>
+    <div class="cd on" style="background:#fff;border:1px solid #ddd" onclick="setBg(this,'#fff','#1a1a1a')" title="Blanco"></div>
+    <div class="cd" style="background:#f5f0e8" onclick="setBg(this,'#f5f0e8','#1a0e00')" title="Pergamino"></div>
+    <div class="cd" style="background:#0a1018" onclick="setBg(this,'#0a1018','#c8e8f8')" title="DICOM"></div>
+    <div class="cd" style="background:#000000" onclick="setBg(this,'#000','#00e8b0')" title="Terminal"></div>
+    <div class="cd" style="background:#f0f4fa" onclick="setBg(this,'#f0f4fa','#1a2540')" title="Clínico"></div>
   </div>
-  <div class="fg">
-    <button class="fb" onclick="copyClean()" title="Copiar texto"><i class="ti ti-copy"></i></button>
+  <div class="tg">
+    <button class="tb-btn" onclick="copyClean()" title="Copiar texto"><i class="ti ti-copy"></i></button>
   </div>
 </div>
 
 <div class="ew">
-  <div class="doc" id="doc" contenteditable="true" spellcheck="false">{contenido_inicial}</div>
+  <div class="doc" id="doc" contenteditable="true" spellcheck="false">{contenido}</div>
 </div>
 
 <div class="as">
-  <button class="ab" onclick="optimize()"><i class="ti ti-wand" style="font-size:11px"></i> Optimizar conclusión</button>
-  <button class="ab" onclick="getDefs()"><i class="ti ti-book" style="font-size:11px"></i> Definiciones</button>
-  <button class="ab p" onclick="exportDoc()"><i class="ti ti-download" style="font-size:11px"></i> Exportar .docx</button>
-  <div class="cw">
-    <div class="cbg"><div class="cbf" id="cbf" style="width:0%"></div></div>
-    <span class="cp" id="cp">0%</span>
+  <button class="as-btn" onclick="optimize()">◈ OPTIMIZAR CONCLUSIÓN</button>
+  <button class="as-btn" onclick="getDefs()">◇ DEFINICIONES</button>
+  <button class="as-btn prime" onclick="exportDoc()">↓ EXPORTAR .DOCX</button>
+  <div class="prog">
+    <div class="prog-bg"><div class="prog-fill" id="pf" style="width:0%"></div></div>
+    <span class="prog-pct" id="pp">0%</span>
   </div>
 </div>
 
@@ -844,8 +888,8 @@ var doc=document.getElementById('doc');
 doc.style.background='#ffffff';
 doc.style.color='#1a1a1a';
 
-function fmt(c){{doc.focus();document.execCommand(c,false,null);updS();}}
-function updS(){{
+function fmt(c){{doc.focus();document.execCommand(c,false,null);upd();}}
+function upd(){{
   ['Bold','Italic','Underline'].forEach(function(c){{
     var b=document.getElementById('b'+c[0]);
     if(b)b.classList.toggle('on',document.queryCommandState(c.toLowerCase()));
@@ -860,157 +904,149 @@ function setBg(el,bg,col){{
 }}
 function insHR(){{
   doc.focus();
-  document.execCommand('insertHTML',false,'<hr style="border:none;border-top:1px solid #ccc;margin:8px 0"><br>');
+  document.execCommand('insertHTML',false,'<hr style="border:none;border-top:1px solid #e0e0e0;margin:10px 0"><br>');
 }}
-function calcS(){{
+function calcPct(){{
   var t=doc.innerText.toUpperCase();
   var f=['TÉCNICA','HALLAZGOS','IMPRESIÓN'].filter(function(s){{return t.includes(s);}}).length;
   var w=t.split(/\\s+/).filter(Boolean).length;
   return Math.min(100,Math.round((f/3)*60+Math.min(w/150,1)*40));
 }}
 function updBar(){{
-  var s=calcS();
-  document.getElementById('cbf').style.width=s+'%';
-  document.getElementById('cp').textContent=s+'%';
+  var s=calcPct();
+  document.getElementById('pf').style.width=s+'%';
+  document.getElementById('pp').textContent=s+'%';
 }}
 doc.addEventListener('input',updBar);
-doc.addEventListener('keyup',updS);
-doc.addEventListener('mouseup',updS);
+doc.addEventListener('keyup',upd);
+doc.addEventListener('mouseup',upd);
 window.addEventListener('load',function(){{updBar();}});
 
 function copyClean(){{
-  var text=doc.innerText;
+  var t=doc.innerText;
   if(navigator.clipboard&&navigator.clipboard.writeText){{
-    navigator.clipboard.writeText(text).then(function(){{toast('Copiado ✓');}});
+    navigator.clipboard.writeText(t).then(function(){{toast('COPIADO');}});
   }}else{{
     var ta=document.createElement('textarea');
-    ta.value=text;ta.style.cssText='position:fixed;opacity:0';
+    ta.value=t;ta.style.cssText='position:fixed;opacity:0';
     document.body.appendChild(ta);ta.select();
     document.execCommand('copy');document.body.removeChild(ta);
-    toast('Copiado ✓');
+    toast('COPIADO');
   }}
 }}
-function toast(msg){{
-  var t=document.createElement('div');
-  t.textContent=msg;
-  t.style.cssText='position:fixed;bottom:56px;left:50%;transform:translateX(-50%);'
-    +'background:{T["accent_glow"]};color:{T["accent_light"]};border:1px solid {T["accent"]};'
-    +'padding:5px 14px;border-radius:4px;font-size:10px;font-family:IBM Plex Mono,monospace;z-index:9999;pointer-events:none';
-  document.body.appendChild(t);
-  setTimeout(function(){{document.body.removeChild(t);}},1800);
+function toast(m){{
+  var el=document.createElement('div');
+  el.textContent=m;
+  el.style.cssText='position:fixed;bottom:52px;left:50%;transform:translateX(-50%);'
+    +'background:transparent;color:var(--accent);border:1px solid var(--accent);'
+    +'padding:4px 14px;border-radius:1px;font-size:8px;letter-spacing:.2em;'
+    +'font-family:JetBrains Mono,monospace;z-index:9999;pointer-events:none;'
+    +'box-shadow:0 0 12px var(--glow);';
+  document.body.appendChild(el);
+  setTimeout(function(){{document.body.removeChild(el);}},1600);
 }}
 function optimize(){{window.parent.postMessage({{type:'optimize',content:doc.innerText}},'*');}}
-function getDefs(){{window.parent.postMessage({{type:'definiciones',content:doc.innerText}},'*');}}
-function exportDoc(){{window.parent.postMessage({{type:'export',content:doc.innerText,html:doc.innerHTML}},'*');}}
+function getDefs(){{window.parent.postMessage({{type:'defs',content:doc.innerText}},'*');}}
+function exportDoc(){{window.parent.postMessage({{type:'export',html:doc.innerHTML}},'*');}}
 </script>
 </body>
 </html>"""
 
-    components.html(editor_html, height=iframe_h, scrolling=False)
+    components.html(html_editor, height=frameH, scrolling=False)
 
-    # ── Acciones IA ──
+    # ── ACCIONES IA ──
     st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
-    c1, c2, c3 = st.columns([1.4, 1.8, 1])
+    c1, c2, c3 = st.columns([1.5, 1.8, 1])
 
     with c1:
-        if st.button("⟡ Optimizar conclusión", use_container_width=True):
+        if st.button("◈  OPTIMIZAR CONCLUSIÓN", use_container_width=True):
             if api_key and st.session_state.reporte_texto:
                 client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
-                with st.spinner("Refinando impresión..."):
+                with st.spinner(""):
                     try:
-                        prompt_ref = f"""
-Eres el optimizador diagnóstico de Beam AI. Mejora ÚNICAMENTE el bloque IMPRESIÓN DIAGNÓSTICA.
+                        r = client.chat.completions.create(
+                            model="deepseek-chat",
+                            messages=[{"role":"user","content":f"""
+Eres AURA — optimizador diagnóstico.
+Mejora ÚNICAMENTE el bloque IMPRESIÓN DIAGNÓSTICA.
 
-{REGLAS_CLINICAS}
+{REGLAS}
 
-CRITERIOS ADICIONALES:
-- Más concisa, morfológicamente precisa y clínicamente accionable.
-- Incluye solo clasificaciones directamente respaldadas (con el criterio que las justifica).
-- Usa "•" para viñetas. Lenguaje sugerente para seguimiento.
-- Devuelve el informe COMPLETO. Conserva Técnica y Hallazgos intactos.
-- CERO asteriscos. Títulos en MAYÚSCULAS.
+· Morfológicamente precisa y clínicamente accionable.
+· Solo clasificaciones con evidencia directa en hallazgos (especifica el criterio).
+· Usa "•" para viñetas. Lenguaje sugerente para seguimiento.
+· Devuelve el informe COMPLETO. Conserva Técnica y Hallazgos.
+· Cero asteriscos. Títulos en MAYÚSCULAS.
 
 REPORTE:
 {st.session_state.reporte_texto}
-"""
-                        res = client.chat.completions.create(
-                            model="deepseek-chat",
-                            messages=[{"role": "user", "content": prompt_ref}],
-                            temperature=0.2
-                        )
-                        texto = res.choices[0].message.content
-                        st.session_state.reporte_texto = texto
-                        st.session_state.reporte_html = texto_a_html(texto)
+"""}], temperature=0.2)
+                        txt = r.choices[0].message.content
+                        st.session_state.reporte_texto = txt
+                        st.session_state.reporte_html = texto_a_html(txt)
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Error: {e}")
+                        st.error(str(e))
 
     with c2:
-        if st.button("✦ Definiciones y clasificaciones", use_container_width=True):
+        if st.button("◇  DEFINICIONES & CLASIFICACIONES", use_container_width=True):
             if api_key and st.session_state.reporte_texto:
                 client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
-                with st.spinner("Analizando y generando referencias..."):
+                with st.spinner(""):
                     try:
-                        prompt_def = f"""
-Eres un radiólogo experto. Analiza el informe y responde con este formato EXACTO.
-Usa líneas simples, SIN espacios en blanco extra entre elementos de la misma sección.
+                        r = client.chat.completions.create(
+                            model="deepseek-chat",
+                            messages=[{"role":"user","content":f"""
+Analiza el informe. Responde con este formato EXACTO.
+Sin líneas en blanco entre items de la misma sección. Una línea en blanco entre secciones.
 
 CLASIFICACIONES USADAS
-[Para cada clasificación encontrada:]
-· Nombre: [nombre completo con autor/sociedad]
-· Grado asignado: [grado] — [significado clínico en 1 línea]
-· Hallazgo que lo justifica: [cita del texto]
-· Referencia: [Autor, año, revista/sociedad]
-· URL: [PubMed, ACR, RSNA o sociedad correspondiente]
+· Nombre: [nombre completo · autor/sociedad]
+· Grado: [grado] — [significado clínico, 1 línea]
+· Justificación: [hallazgo específico del texto]
+· Ref: [Autor, año, revista]
+· URL: [PubMed o sociedad oficial]
 
 CLASIFICACIONES SUGERIDAS
-[Solo si hay hallazgos que las justifiquen EXPLÍCITAMENTE en el texto. Si no hay, escribe "Ninguna adicional justificada por los hallazgos descritos."]
+[Solo si hay hallazgo directo que las justifique. Si no: "Ninguna adicional justificada."]
 · Nombre: [clasificación]
-· Hallazgo que la justifica: [hallazgo específico del informe]
-· Referencia: [Autor, año]
+· Hallazgo que la justifica: [del texto]
+· Ref: [Autor, año]
 · URL: [URL]
 
-DEFINICIONES OPERATIVAS
-[Solo los 3-4 términos más relevantes, en líneas compactas:]
-· [Término]: [definición morfológica en 1-2 líneas]
+DEFINICIONES
+· [Término]: [definición morfológica, 1-2 líneas]
 
 CORRELACIÓN CLÍNICA
-[2-3 líneas. Impacto clínico y recomendación de manejo. Lenguaje sugerente, no prescriptivo.]
+[2-3 líneas. Lenguaje sugerente, no prescriptivo.]
 
-FORMATO ESTRICTO: SIN asteriscos. SIN líneas en blanco entre items de la misma sección. Solo una línea en blanco entre secciones principales.
+Sin asteriscos. Sin negritas markdown.
 
 INFORME:
 {st.session_state.reporte_texto}
-"""
-                        res = client.chat.completions.create(
-                            model="deepseek-chat",
-                            messages=[{"role": "user", "content": prompt_def}],
-                            temperature=0.15
-                        )
-                        st.session_state.definiciones_resultado = res.choices[0].message.content
+"""}], temperature=0.15)
+                        st.session_state.defs_resultado = r.choices[0].message.content
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Error: {e}")
+                        st.error(str(e))
 
     with c3:
         if st.session_state.reporte_texto:
-            docx_bytes = generar_docx(st.session_state.reporte_html or st.session_state.reporte_texto)
             st.download_button(
-                "↓ Exportar .docx",
-                data=docx_bytes,
-                file_name="BeamAI_Informe.docx",
+                "↓  EXPORTAR",
+                data=generar_docx(st.session_state.reporte_html),
+                file_name="AURA_Informe.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 use_container_width=True
             )
 
-    # ── Definiciones ──
-    if st.session_state.definiciones_resultado:
-        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-        with st.expander("⬡  DEFINICIONES · CLASIFICACIONES · REFERENCIAS", expanded=True):
+    # ── DEFINICIONES ──
+    if st.session_state.defs_resultado:
+        st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+        with st.expander("◈  DEFINICIONES · CLASIFICACIONES · REFERENCIAS", expanded=True):
             st.markdown(
-                f'<div class="defs-box">{st.session_state.definiciones_resultado}</div>',
+                f'<div class="defs-box">{st.session_state.defs_resultado}</div>',
                 unsafe_allow_html=True
             )
-            if st.button("✕ Cerrar"):
-                st.session_state.definiciones_resultado = ""
-                st.rerun()
+            if st.button("✕  CERRAR"):
+                st.session_state.defs_resultado = ""; st.rerun()
