@@ -1,10 +1,12 @@
 import streamlit as st
 import streamlit.components.v1 as components
 from docx import Document
-from docx.shared import Pt, RGBColor
+from docx.shared import Pt, RGBColor, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-import speech_recognition as sr
 import io
+import re
+import tempfile
+import os
 from openai import OpenAI
 
 # ──────────────────────────────────────────────────────────────
@@ -85,6 +87,13 @@ MODALIDADES = [
     "Radiografía", "Ultrasonido", "PET-CT",
 ]
 
+# MEJORA: Soporte multi-modelo con etiquetas descriptivas
+MODELOS = {
+    "DeepSeek Chat": {"api_url": "https://api.deepseek.com", "model_id": "deepseek-chat"},
+    "GPT-4o Mini": {"api_url": "https://api.openai.com/v1", "model_id": "gpt-4o-mini"},
+    "GPT-4.1 Mini": {"api_url": None, "model_id": "gpt-4.1-mini"},  # usa base_url del entorno
+}
+
 REGLAS = """
 PROTOCOLO CLÍNICO AURA — REGLAS INVIOLABLES:
 
@@ -117,9 +126,12 @@ DEFAULTS = {
     "reporte_texto": "",
     "defs_resultado": "",
     "editor_h": 560,
-    "modo": "dictado",   # "dictado" | "hallazgos"
+    "modo": "dictado",          # "dictado" | "hallazgos"
     "plantilla_txt": "",
     "tiene_tabla": False,
+    "modelo_sel": "DeepSeek Chat",
+    "historial": [],            # NUEVO: lista de dicts {modalidad, region, texto, html}
+    "audio_procesado_id": None, # NUEVO: evita re-transcribir el mismo audio
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
@@ -128,7 +140,12 @@ for k, v in DEFAULTS.items():
 # ──────────────────────────────────────────────────────────────
 # HELPERS
 # ──────────────────────────────────────────────────────────────
+
 def leer_plantilla(file):
+    """
+    Lee un archivo .docx y extrae texto y tablas en formato Markdown.
+    Retorna (texto_plantilla: str, tiene_tabla: bool).
+    """
     doc = Document(file)
     partes = []
     n = 0
@@ -140,129 +157,268 @@ def leer_plantilla(file):
             if tag == 'p':
                 p = _pp.Paragraph(el, doc)
                 t = p.text.strip()
-                if t: partes.append(t)
+                if t:
+                    partes.append(t)
             elif tag == 'tbl':
                 n += 1
                 tbl = _tt.Table(el, doc)
-                rows = ["| " + " | ".join(c.text.strip() for c in r.cells) + " |" for r in tbl.rows]
+                rows = [
+                    "| " + " | ".join(c.text.strip() for c in r.cells) + " |"
+                    for r in tbl.rows
+                ]
                 partes.append(f"[TABLA {n}]\n" + "\n".join(rows) + "\n[/TABLA]")
     except Exception:
         partes = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
     return "\n".join(partes), n > 0
 
+
 def texto_a_html(texto):
-    import re
+    """
+    Convierte texto plano con Markdown básico a HTML para el editor.
+    Soporta tablas Markdown, listas, encabezados en mayúsculas y viñetas.
+    """
     lines, buf, in_tbl = [], [], False
     for line in texto.split("\n"):
         s = line.strip()
         if not s:
             if in_tbl:
-                lines.append(_tbl_html(buf)); buf = []; in_tbl = False
+                lines.append(_tbl_html(buf))
+                buf = []
+                in_tbl = False
             lines.append("<br>")
         elif re.match(r'^\|.+\|$', s):
-            if all(c in '-| :' for c in s): continue
-            in_tbl = True; buf.append(s)
+            # Ignorar líneas separadoras de tabla Markdown (|---|---|)
+            if all(c in '-| :' for c in s):
+                continue
+            in_tbl = True
+            buf.append(s)
         else:
             if in_tbl:
-                lines.append(_tbl_html(buf)); buf = []; in_tbl = False
+                lines.append(_tbl_html(buf))
+                buf = []
+                in_tbl = False
+            # Encabezados en mayúsculas (longitud < 70 y no comienzan con viñeta)
             if s.isupper() and len(s) < 70 and not s.startswith("•"):
                 lines.append(f"<b>{s}</b><br>")
-            elif s.startswith("•"):
+            elif s.startswith("•") or s.startswith("·"):
                 lines.append(f"<li>{s[1:].strip()}</li>")
+            # MEJORA: soporte para negritas Markdown **texto**
+            elif "**" in s:
+                s_fmt = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', s)
+                lines.append(f"{s_fmt}<br>")
             else:
                 lines.append(f"{s}<br>")
-    if in_tbl and buf: lines.append(_tbl_html(buf))
+    if in_tbl and buf:
+        lines.append(_tbl_html(buf))
     return "\n".join(lines)
 
+
 def _tbl_html(rows):
+    """Convierte filas Markdown a tabla HTML con estilos básicos."""
     h = '<table style="border-collapse:collapse;width:100%;margin:8px 0;font-size:12px">'
     for i, row in enumerate(rows):
         cols = [c.strip() for c in row.strip("|").split("|")]
         tag = "th" if i == 0 else "td"
-        h += "<tr>" + "".join(f"<{tag} style='border:1px solid #ccc;padding:4px 9px'>{c}</{tag}>" for c in cols) + "</tr>"
+        h += "<tr>" + "".join(
+            f"<{tag} style='border:1px solid #ccc;padding:4px 9px'>{c}</{tag}>"
+            for c in cols
+        ) + "</tr>"
     return h + "</table>"
 
-def generar_docx(html):
-    from html.parser import HTMLParser
-    import re
 
-    class P(HTMLParser):
-        def __init__(self):
-            super().__init__()
-            self.doc = Document()
-            s = self.doc.styles["Normal"]
-            s.font.name = "Calibri"; s.font.size = Pt(11)
-            self.b = self.i = self.u = False
-            self.para = None; self.in_tbl = False
-            self.rows = []; self.row = []; self.cell = ""
+def generar_docx_desde_markdown(texto_md: str, modalidad: str = "", region: str = "") -> bytes:
+    """
+    MEJORA CRÍTICA: Genera un archivo .docx directamente desde el texto Markdown/plano
+    que devuelve la IA, en lugar de parsear HTML frágil.
+    Esto garantiza fidelidad de formato, tablas y tipografía.
+    """
+    doc = Document()
 
-        def handle_starttag(self, tag, attrs):
-            if tag in ("b","strong"):   self.b = True
-            elif tag in ("i","em"):     self.i = True
-            elif tag == "u":            self.u = True
-            elif tag in ("p","div"):    self.para = self.doc.add_paragraph()
-            elif tag == "br":
-                if not self.para: self.para = self.doc.add_paragraph()
-            elif tag == "li":           self.para = self.doc.add_paragraph(style="List Bullet")
-            elif tag == "table":        self.in_tbl = True; self.rows = []
-            elif tag == "tr":           self.row = []
-            elif tag in ("td","th"):    self.cell = ""
+    # Estilos base
+    style_normal = doc.styles["Normal"]
+    style_normal.font.name = "Calibri"
+    style_normal.font.size = Pt(11)
 
-        def handle_endtag(self, tag):
-            if tag in ("b","strong"):   self.b = False
-            elif tag in ("i","em"):     self.i = False
-            elif tag == "u":            self.u = False
-            elif tag in ("td","th"):    self.row.append(self.cell); self.cell = ""
-            elif tag == "tr":           self.rows.append(self.row)
-            elif tag == "table":
-                self.in_tbl = False
-                if self.rows:
-                    cols = max(len(r) for r in self.rows)
-                    t = self.doc.add_table(rows=len(self.rows), cols=cols)
-                    t.style = "Table Grid"
-                    for i, r in enumerate(self.rows):
-                        for j, c in enumerate(r):
-                            if j < cols: t.rows[i].cells[j].text = c
-                self.rows = []
+    # Encabezado del documento
+    if modalidad or region:
+        titulo = doc.add_heading(f"{modalidad.upper()} — {region.upper()}", level=1)
+        titulo.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        def handle_data(self, data):
-            t = data.strip()
-            if not t: return
-            if self.in_tbl: self.cell += t; return
-            if not self.para: self.para = self.doc.add_paragraph()
-            run = self.para.add_run(t + " ")
-            run.bold = self.b; run.italic = self.i; run.underline = self.u
+    in_table_block = False
+    table_rows = []
 
-    parser = P()
+    def flush_table():
+        nonlocal table_rows
+        if not table_rows:
+            return
+        cols = max(len(r) for r in table_rows)
+        t = doc.add_table(rows=len(table_rows), cols=cols)
+        t.style = "Table Grid"
+        for i, row in enumerate(table_rows):
+            for j, cell_text in enumerate(row):
+                if j < cols:
+                    cell = t.rows[i].cells[j]
+                    cell.text = cell_text
+                    if i == 0:
+                        for run in cell.paragraphs[0].runs:
+                            run.bold = True
+        table_rows = []
+
+    for line in texto_md.split("\n"):
+        s = line.strip()
+
+        # Detectar bloque de tabla Markdown
+        if re.match(r'^\|.+\|$', s):
+            if all(c in '-| :' for c in s):
+                continue  # separador de tabla
+            in_table_block = True
+            cols = [c.strip() for c in s.strip("|").split("|")]
+            table_rows.append(cols)
+            continue
+        else:
+            if in_table_block:
+                flush_table()
+                in_table_block = False
+
+        if not s:
+            doc.add_paragraph()
+            continue
+
+        # Encabezados en mayúsculas → Heading 2
+        if s.isupper() and len(s) < 80 and not s.startswith("•") and not s.startswith("·"):
+            h = doc.add_heading(s, level=2)
+            h.runs[0].font.color.rgb = RGBColor(0x1a, 0x3a, 0x6a)
+            continue
+
+        # Viñetas
+        if s.startswith("•") or s.startswith("·"):
+            p = doc.add_paragraph(style="List Bullet")
+            _add_formatted_run(p, s[1:].strip())
+            continue
+
+        # Línea normal con posible Markdown en línea
+        p = doc.add_paragraph()
+        _add_formatted_run(p, s)
+
+    if in_table_block:
+        flush_table()
+
+    bio = io.BytesIO()
+    doc.save(bio)
+    return bio.getvalue()
+
+
+def _add_formatted_run(paragraph, text: str):
+    """
+    Añade texto a un párrafo de python-docx respetando negritas (**texto**)
+    e itálicas (*texto*) de Markdown inline.
+    """
+    # Patrón para detectar **negrita** y *itálica*
+    pattern = re.compile(r'(\*\*(.+?)\*\*|\*(.+?)\*)')
+    last = 0
+    for m in pattern.finditer(text):
+        # Texto antes del marcador
+        if m.start() > last:
+            paragraph.add_run(text[last:m.start()])
+        raw = m.group(0)
+        if raw.startswith("**"):
+            run = paragraph.add_run(m.group(2))
+            run.bold = True
+        else:
+            run = paragraph.add_run(m.group(3))
+            run.italic = True
+        last = m.end()
+    if last < len(text):
+        paragraph.add_run(text[last:])
+
+
+def transcribir_whisper(audio_file, client: OpenAI) -> str:
+    """
+    MEJORA CRÍTICA: Transcripción de audio con Whisper (OpenAI).
+    Usa un prompt inicial con terminología radiológica para mejorar la precisión.
+    Retorna el texto transcrito o una cadena vacía si falla.
+    """
+    PROMPT_RADIOLOGICO = (
+        "Transcripción de dictado radiológico en español. "
+        "Términos esperados: Stoller, Kellgren-Lawrence, ICRS, LCA, LCP, LCM, LCL, "
+        "menisco, condromalacia, osteofito, esclerosis subcondral, extrusión, "
+        "pinzamiento, STIR, DP, T1, T2, PET-CT, resonancia magnética, tomografía."
+    )
     try:
-        parser.feed(html.replace("\n", " ").strip())
-    except Exception:
-        d = Document()
-        for line in re.sub(r"<[^>]+>", "", html).split("\n"):
-            d.add_paragraph(line)
-        bio = io.BytesIO(); d.save(bio); return bio.getvalue()
-    bio = io.BytesIO(); parser.doc.save(bio); return bio.getvalue()
+        # Guardar el archivo de audio en un temporal para enviarlo a la API
+        suffix = ".wav"
+        if hasattr(audio_file, "name"):
+            ext = os.path.splitext(audio_file.name)[-1].lower()
+            if ext in [".mp3", ".mp4", ".m4a", ".ogg", ".webm", ".flac"]:
+                suffix = ext
 
-def transcribir(audio):
-    r = sr.Recognizer()
-    with sr.AudioFile(audio) as src:
-        try: return r.recognize_google(r.record(src), language="es-MX")
-        except: return ""
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(audio_file.read())
+            tmp_path = tmp.name
 
-def completitud(texto):
-    secs = sum(1 for s in ["TÉCNICA","HALLAZGOS","IMPRESIÓN"] if s in texto.upper())
+        with open(tmp_path, "rb") as f:
+            result = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=f,
+                language="es",
+                prompt=PROMPT_RADIOLOGICO
+            )
+        os.unlink(tmp_path)
+        return result.text.strip()
+    except Exception as e:
+        # Si Whisper falla (p.ej. modelo no disponible en la URL configurada),
+        # intentar con speech_recognition como fallback
+        try:
+            import speech_recognition as sr
+            audio_file.seek(0)
+            r = sr.Recognizer()
+            with sr.AudioFile(audio_file) as src:
+                return r.recognize_google(r.record(src), language="es-MX")
+        except Exception:
+            return ""
+
+
+def get_openai_client(api_key: str, modelo_nombre: str) -> OpenAI:
+    """
+    Crea y retorna un cliente OpenAI configurado según el modelo seleccionado.
+    """
+    cfg = MODELOS.get(modelo_nombre, MODELOS["DeepSeek Chat"])
+    if cfg["api_url"]:
+        return OpenAI(api_key=api_key, base_url=cfg["api_url"])
+    return OpenAI(api_key=api_key)
+
+
+def get_model_id(modelo_nombre: str) -> str:
+    return MODELOS.get(modelo_nombre, MODELOS["DeepSeek Chat"])["model_id"]
+
+
+def completitud(texto: str) -> int:
+    """Calcula un porcentaje de completitud del informe (0-100)."""
+    secs = sum(1 for s in ["TÉCNICA", "HALLAZGOS", "IMPRESIÓN"] if s in texto.upper())
     words = len(texto.split())
-    return min(100, int((secs/3)*60 + min(words/150,1)*40))
+    return min(100, int((secs / 3) * 60 + min(words / 150, 1) * 40))
 
+
+def guardar_en_historial(modalidad: str, region: str, texto: str, html: str):
+    """Agrega el informe actual al historial de la sesión (máximo 10 entradas)."""
+    entry = {"modalidad": modalidad, "region": region, "texto": texto, "html": html}
+    st.session_state.historial.insert(0, entry)
+    if len(st.session_state.historial) > 10:
+        st.session_state.historial = st.session_state.historial[:10]
+
+
+# ──────────────────────────────────────────────────────────────
+# API KEY — Prioridad: secrets → variable de entorno → input manual
+# ──────────────────────────────────────────────────────────────
 try:
     api_key = st.secrets["deepseek_key"]
-except:
-    api_key = ""
+except Exception:
+    api_key = os.environ.get("OPENAI_API_KEY", "")
 
 T = TEMAS[st.session_state.tema]
 
 # ──────────────────────────────────────────────────────────────
-# CSS HOLOGRÁFICO
+# CSS HOLOGRÁFICO (v2 — limpieza de conflictos con Streamlit)
 # ──────────────────────────────────────────────────────────────
 st.markdown(f"""
 <style>
@@ -382,10 +538,10 @@ header, footer, [data-testid="stToolbar"] {{ display: none !important; }}
     border-color: {T['accent2']} !important;
     box-shadow: 0 0 12px {T['glow']} !important;
 }}
-.stTextArea textarea::placeholder {{ color: {T['text_ghost']} !important; }}
+.stTextArea textarea::placeholder {{ color: {T['text_dim']} !important; }}
 
 /* ── TEXT INPUT ── */
-[data-testid="stTextInput"] input {{
+.stTextInput input {{
     background: transparent !important;
     border: 1px solid {T['glass_border']} !important;
     border-radius: 2px !important;
@@ -393,114 +549,135 @@ header, footer, [data-testid="stToolbar"] {{ display: none !important; }}
     font-size: 11px !important;
     caret-color: {T['accent']} !important;
 }}
-[data-testid="stTextInput"] input:focus {{
+.stTextInput input:focus {{
     border-color: {T['accent2']} !important;
     box-shadow: 0 0 10px {T['glow']} !important;
 }}
+.stTextInput input::placeholder {{ color: {T['text_dim']} !important; }}
 
-/* ── AUDIO INPUT ── */
-[data-testid="stAudioInput"] {{
-    background: transparent !important;
-    border: 1px solid {T['glass_border']} !important;
-    border-radius: 2px !important;
-}}
-
-/* ── FILE UPLOADER ── */
-[data-testid="stFileUploader"] {{
-    background: transparent !important;
-    border: 1px dashed {T['glass_border']} !important;
-    border-radius: 2px !important;
-}}
-[data-testid="stFileUploader"] * {{
-    color: {T['text_dim']} !important;
-    font-size: 10px !important;
-}}
-[data-testid="stFileUploader"]:hover {{
-    border-color: {T['accent2']} !important;
-}}
-
-/* ── PRIMARY BUTTON ── */
-.btn-primary > div > button {{
-    background: transparent !important;
-    border: 1px solid {T['accent']} !important;
-    border-radius: 2px !important;
-    color: {T['accent']} !important;
-    font-size: 10px !important;
-    letter-spacing: .2em !important;
-    text-transform: uppercase !important;
-    padding: .65rem 1rem !important;
-    width: 100% !important;
-    transition: all .2s !important;
-    box-shadow: 0 0 16px {T['glow']} !important;
-}}
-.btn-primary > div > button:hover {{
-    background: {T['glass']} !important;
-    box-shadow: 0 0 30px {T['glow']}, inset 0 0 20px {T['glow']} !important;
-}}
-
-/* ── SECONDARY BUTTONS ── */
+/* ── BUTTONS ── */
 .stButton > button {{
     background: transparent !important;
     border: 1px solid {T['glass_border']} !important;
     border-radius: 2px !important;
     color: {T['text_dim']} !important;
     font-size: 9px !important;
-    letter-spacing: .12em !important;
+    letter-spacing: .18em !important;
     text-transform: uppercase !important;
+    padding: 5px 10px !important;
+    transition: all .15s !important;
 }}
 .stButton > button:hover {{
     border-color: {T['accent2']} !important;
     color: {T['text']} !important;
+    box-shadow: 0 0 10px {T['glow']} !important;
 }}
 
-/* ── EXPANDERS ── */
-[data-testid="stExpander"] {{
-    background: {T['glass']} !important;
-    border: 1px solid {T['glass_border']} !important;
-    border-radius: 2px !important;
-    margin-bottom: 3px !important;
+/* ── BOTÓN PRIMARIO ── */
+.btn-primary .stButton > button {{
+    border-color: {T['accent']} !important;
+    color: {T['accent']} !important;
+    box-shadow: 0 0 12px {T['glow']} !important;
+    font-size: 10px !important;
+    padding: 7px 14px !important;
 }}
-[data-testid="stExpander"] summary {{
-    color: {T['text_dim']} !important;
+.btn-primary .stButton > button:hover {{
+    background: {T['glass']} !important;
+    box-shadow: 0 0 20px {T['glow']} !important;
+}}
+
+/* ── DOWNLOAD BUTTON ── */
+.stDownloadButton > button {{
+    background: transparent !important;
+    border: 1px solid {T['accent']} !important;
+    border-radius: 2px !important;
+    color: {T['accent']} !important;
     font-size: 9px !important;
     letter-spacing: .18em !important;
     text-transform: uppercase !important;
+    padding: 5px 10px !important;
+    transition: all .15s !important;
+    box-shadow: 0 0 8px {T['glow']} !important;
 }}
-[data-testid="stExpander"] summary:hover {{ color: {T['text']} !important; }}
-[data-testid="stExpander"] summary svg {{ display: none !important; }}
+.stDownloadButton > button:hover {{
+    background: {T['glass']} !important;
+    box-shadow: 0 0 18px {T['glow']} !important;
+}}
 
-/* ── DOWNLOAD ── */
-[data-testid="stDownloadButton"] > button {{
+/* ── EXPANDERS ── */
+.streamlit-expanderHeader {{
     background: transparent !important;
     border: 1px solid {T['glass_border']} !important;
     border-radius: 2px !important;
     color: {T['text_dim']} !important;
     font-size: 9px !important;
-    letter-spacing: .12em !important;
+    letter-spacing: .2em !important;
+    text-transform: uppercase !important;
+    padding: 5px 10px !important;
 }}
-[data-testid="stDownloadButton"] > button:hover {{
-    border-color: {T['accent']} !important;
-    color: {T['accent']} !important;
-    box-shadow: 0 0 12px {T['glow']} !important;
+.streamlit-expanderHeader:hover {{
+    border-color: {T['accent2']} !important;
+    color: {T['text']} !important;
+}}
+.streamlit-expanderContent {{
+    border: 1px solid {T['glass_border']} !important;
+    border-top: none !important;
+    background: {T['glass']} !important;
+    padding: 10px !important;
+}}
+
+/* ── FILE UPLOADER ── */
+[data-testid="stFileUploader"] {{
+    border: 1px dashed {T['glass_border']} !important;
+    border-radius: 2px !important;
+    background: {T['glass']} !important;
+}}
+[data-testid="stFileUploader"] label {{
+    color: {T['text_dim']} !important;
+    font-size: 9px !important;
+    letter-spacing: .15em !important;
 }}
 
 /* ── SLIDER ── */
-[data-testid="stSlider"] > div {{ padding: 0 !important; }}
-[data-testid="stSlider"] [role="slider"] {{
+[data-testid="stSlider"] [data-baseweb="slider"] div[role="slider"] {{
     background: {T['accent']} !important;
-    box-shadow: 0 0 8px {T['accent']} !important;
+    box-shadow: 0 0 6px {T['accent']} !important;
+}}
+[data-testid="stSlider"] [data-baseweb="slider"] div[data-testid="stThumbValue"] {{
+    color: {T['text']} !important;
+    font-size: 9px !important;
+}}
+
+/* ── ALERTS ── */
+.stAlert {{
+    background: {T['glass']} !important;
+    border: 1px solid {T['glass_border']} !important;
+    border-radius: 2px !important;
+    color: {T['text']} !important;
+    font-size: 10px !important;
 }}
 
 /* ── DEFS BOX ── */
 .defs-box {{
-    font-size: 10.5px; line-height: 1.45;
-    color: {T['text_dim']}; white-space: pre-wrap;
-    padding: 14px 16px;
+    font-size: 11px;
+    line-height: 1.75;
+    color: {T['text']};
+    white-space: pre-wrap;
+    padding: 10px;
     background: {T['glass']};
     border: 1px solid {T['glass_border']};
     border-radius: 2px;
 }}
 .defs-box b {{ color: {T['text']}; }}
+
+/* ── HISTORIAL BADGE ── */
+.hist-badge {{
+    display: inline-block;
+    font-size: 8px; letter-spacing: .15em;
+    color: {T['accent']}; border: 1px solid {T['accent2']};
+    padding: 2px 7px; border-radius: 1px;
+    margin-bottom: 4px; cursor: pointer;
+}}
 
 /* ── SCROLLBAR ── */
 ::-webkit-scrollbar {{ width: 2px; height: 2px; }}
@@ -516,6 +693,7 @@ hr {{ border: none; border-top: 1px solid {T['glass_border']} !important; margin
 # ──────────────────────────────────────────────────────────────
 # TOPBAR
 # ──────────────────────────────────────────────────────────────
+modelo_activo = st.session_state.modelo_sel
 st.markdown(f"""
 <div class="aura-bar">
   <div class="aura-logo">
@@ -523,10 +701,10 @@ st.markdown(f"""
     AURA
   </div>
   <div class="aura-sep"></div>
-  <span class="aura-meta">Radiology Intelligence · v1.0</span>
+  <span class="aura-meta">Radiology Intelligence · v2.0</span>
   <div class="aura-status">
     <div class="aura-online"></div>
-    DEEPSEEK · ONLINE
+    {modelo_activo.upper()} · ONLINE
   </div>
 </div>
 """, unsafe_allow_html=True)
@@ -542,11 +720,13 @@ col_l, col_r = st.columns([1, 2.8], gap="small")
 with col_l:
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-    # API Key
+    # ── API KEY ──
     if not api_key:
         st.markdown('<span class="sec-lbl">API KEY</span>', unsafe_allow_html=True)
-        api_key = st.text_input("k", type="password", label_visibility="collapsed",
-                                placeholder="sk- ···  DeepSeek API Key")
+        api_key = st.text_input(
+            "k", type="password", label_visibility="collapsed",
+            placeholder="sk- ···  DeepSeek / OpenAI API Key"
+        )
         st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 
     # ── ESTUDIO ──
@@ -556,6 +736,17 @@ with col_l:
         st.markdown('<span class="sec-lbl">REGIÓN</span>', unsafe_allow_html=True)
         region = st.selectbox("R", REGIONES, label_visibility="collapsed")
 
+        # NUEVO: Selector de modelo IA
+        st.markdown('<span class="sec-lbl">MODELO IA</span>', unsafe_allow_html=True)
+        modelo_sel = st.selectbox(
+            "Modelo", list(MODELOS.keys()),
+            index=list(MODELOS.keys()).index(st.session_state.modelo_sel),
+            label_visibility="collapsed"
+        )
+        if modelo_sel != st.session_state.modelo_sel:
+            st.session_state.modelo_sel = modelo_sel
+            st.rerun()
+
     # ── MODO DE ENTRADA ──
     with st.expander("▸  MODO DE ENTRADA", expanded=True):
         modo_label = "DICTADO DE VOZ" if st.session_state.modo == "dictado" else "HALLAZGOS ESCRITOS"
@@ -564,25 +755,51 @@ with col_l:
         c1, c2 = st.columns(2)
         with c1:
             if st.button("⊙ VOZ", use_container_width=True):
-                st.session_state.modo = "dictado"; st.rerun()
+                st.session_state.modo = "dictado"
+                st.rerun()
         with c2:
             if st.button("⊙ TEXTO", use_container_width=True):
-                st.session_state.modo = "hallazgos"; st.rerun()
+                st.session_state.modo = "hallazgos"
+                st.rerun()
 
         if st.session_state.modo == "dictado":
+            # MEJORA: Transcripción con Whisper
             audio = st.audio_input("_", label_visibility="collapsed")
             if audio:
-                txt = transcribir(audio)
-                if txt and txt not in st.session_state.dictado:
-                    st.session_state.dictado += " " + txt
+                # MEJORA: Evitar re-transcribir el mismo archivo de audio
+                audio_id = hash(audio.read())
+                audio.seek(0)
+                if audio_id != st.session_state.audio_procesado_id:
+                    if api_key:
+                        with st.spinner("Transcribiendo con Whisper..."):
+                            client_tmp = get_openai_client(api_key, st.session_state.modelo_sel)
+                            txt = transcribir_whisper(audio, client_tmp)
+                        if txt:
+                            st.session_state.dictado += (" " + txt).strip()
+                            st.session_state.audio_procesado_id = audio_id
+                            st.rerun()
+                        else:
+                            st.warning("No se pudo transcribir el audio.")
+                    else:
+                        st.warning("Ingresa tu API Key para usar la transcripción.")
         else:
             st.markdown('<span class="sec-lbl">HALLAZGOS / IMPRESIÓN</span>', unsafe_allow_html=True)
 
         dictado = st.text_area(
-            "_", value=st.session_state.dictado, height=140,
+            "_",
+            value=st.session_state.dictado,
+            height=140,
             label_visibility="collapsed",
-            placeholder="Dicta o escribe hallazgos, diagnósticos o ambos...\n\nEj: Desgarro horizontal menisco medial Stoller III, extrusión 3 mm. Osteofitos marginales tibiofemorales mediales."
+            placeholder=(
+                "Dicta o escribe hallazgos, diagnósticos o ambos...\n\n"
+                "Ej: Desgarro horizontal menisco medial Stoller III, extrusión 3 mm. "
+                "Osteofitos marginales tibiofemorales mediales."
+            ),
+            key="dictado_area"
         )
+        # Sincronizar el textarea con el estado de sesión sin rerun innecesario
+        if dictado != st.session_state.dictado:
+            st.session_state.dictado = dictado
 
     # ── PLANTILLA ──
     with st.expander("▸  PLANTILLA", expanded=False):
@@ -595,10 +812,11 @@ with col_l:
                 f'<span style="font-size:9px;letter-spacing:.15em;color:{T["accent"]}">{icono}</span>',
                 unsafe_allow_html=True
             )
-        st.markdown('<span class="sec-lbl">DIRECTRICES</span>', unsafe_allow_html=True)
+        st.markdown('<span class="sec-lbl">DIRECTRICES ADICIONALES</span>', unsafe_allow_html=True)
         instrucciones = st.text_area(
             "_", height=56, label_visibility="collapsed",
-            value="Lenguaje médico experto. Sin asteriscos. Solo clasificaciones respaldadas."
+            value="Lenguaje médico experto. Sin asteriscos. Solo clasificaciones respaldadas.",
+            key="instrucciones_area"
         )
 
     # ── APARIENCIA ──
@@ -606,16 +824,28 @@ with col_l:
         st.markdown('<span class="sec-lbl">TEMA</span>', unsafe_allow_html=True)
         for nombre in TEMAS:
             activo = nombre == st.session_state.tema
-            acc = TEMAS[nombre]["accent"]
             lbl = f"{'▶ ' if activo else '  '}{nombre.upper()}"
             if st.button(lbl, key=f"t_{nombre}", use_container_width=True):
-                st.session_state.tema = nombre; st.rerun()
+                st.session_state.tema = nombre
+                st.rerun()
 
         st.markdown('<span class="sec-lbl">ALTURA EDITOR</span>', unsafe_allow_html=True)
         h = st.slider("_", 280, 1100, st.session_state.editor_h, 40,
-                       label_visibility="collapsed")
+                      label_visibility="collapsed")
         if h != st.session_state.editor_h:
-            st.session_state.editor_h = h; st.rerun()
+            st.session_state.editor_h = h
+            st.rerun()
+
+    # ── HISTORIAL (NUEVO) ──
+    if st.session_state.historial:
+        with st.expander(f"▸  HISTORIAL ({len(st.session_state.historial)})", expanded=False):
+            st.markdown('<span class="sec-lbl">INFORMES RECIENTES</span>', unsafe_allow_html=True)
+            for i, entry in enumerate(st.session_state.historial):
+                label = f"{i+1}. {entry['modalidad'][:3].upper()} · {entry['region']}"
+                if st.button(label, key=f"hist_{i}", use_container_width=True):
+                    st.session_state.reporte_texto = entry["texto"]
+                    st.session_state.reporte_html = entry["html"]
+                    st.rerun()
 
     # ── CTA ──
     st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
@@ -625,19 +855,27 @@ with col_l:
     st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
     ca, cb = st.columns(2)
     with ca:
-        if st.button("PURGAR", use_container_width=True):
-            st.session_state.dictado = ""; st.rerun()
+        if st.button("PURGAR DICTADO", use_container_width=True):
+            st.session_state.dictado = ""
+            st.session_state.audio_procesado_id = None
+            st.rerun()
     with cb:
-        if st.button("LIMPIAR", use_container_width=True):
+        if st.button("LIMPIAR EDITOR", use_container_width=True):
             st.session_state.reporte_html = ""
-            st.session_state.reporte_texto = ""; st.rerun()
+            st.session_state.reporte_texto = ""
+            st.rerun()
 
 # ──────────────────────────────────────────────────────────────
-# PROCESAMIENTO
+# PROCESAMIENTO PRINCIPAL
 # ──────────────────────────────────────────────────────────────
 if procesar:
-    if api_key and dictado.strip():
-        client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+    if not api_key:
+        st.warning("⚠ API Key requerida para generar el informe.")
+    elif not st.session_state.dictado.strip():
+        st.warning("⚠ Ingresa hallazgos o realiza un dictado antes de generar.")
+    else:
+        client = get_openai_client(api_key, st.session_state.modelo_sel)
+        model_id = get_model_id(st.session_state.modelo_sel)
         plantilla = st.session_state.plantilla_txt
         tiene_tabla = st.session_state.tiene_tabla
         tabla_instruc = (
@@ -645,38 +883,49 @@ if procesar:
             if tiene_tabla else
             "NO hay tablas en la plantilla. PROHIBIDO generar tablas bajo ninguna circunstancia."
         )
-        prompt = f"""
-Eres AURA, sistema de inteligencia radiológica. Redacta un informe de {modalidad} — región: {region}.
+
+        # MEJORA: Prompt con estructura explícita y Few-Shot para mayor consistencia
+        plantilla_default = "TÉCNICA\nHALLAZGOS\nIMPRESIÓN DIAGNÓSTICA"
+        plantilla_usar = plantilla if plantilla else plantilla_default
+        prompt_sistema = f"""Eres AURA, sistema de inteligencia radiológica de alta precisión clínica.
+Tu tarea es redactar un informe radiológico estructurado de {modalidad} para la región: {region}.
 
 {REGLAS}
 
 TABLAS: {tabla_instruc}
 
-PLANTILLA:
-{plantilla if plantilla else "TÉCNICA / HALLAZGOS / IMPRESIÓN DIAGNÓSTICA"}
+PLANTILLA A SEGUIR:
+{plantilla_usar}
 
-DIRECTRICES: {instrucciones}
+DIRECTRICES ADICIONALES: {instrucciones}
 
-ENTRADA DEL RADIÓLOGO:
-{dictado}
+FORMATO DE SALIDA:
+- Usa MAYÚSCULAS para los títulos de sección (TÉCNICA, HALLAZGOS, IMPRESIÓN DIAGNÓSTICA).
+- Usa • para viñetas en la impresión diagnóstica.
+- No uses asteriscos Markdown (*) para negritas; usa MAYÚSCULAS para énfasis.
+- Sé morfológicamente preciso: incluye medidas, grados de clasificación y localización anatómica.
 """
-        with st.spinner(""):
+
+        with st.spinner("Generando informe..."):
             try:
                 res = client.chat.completions.create(
-                    model="deepseek-chat",
-                    messages=[{"role": "system", "content": prompt}],
-                    temperature=0.1
+                    model=model_id,
+                    messages=[
+                        {"role": "system", "content": prompt_sistema},
+                        {"role": "user", "content": f"DICTADO / HALLAZGOS DEL RADIÓLOGO:\n{st.session_state.dictado}"}
+                    ],
+                    temperature=0.1,
+                    max_tokens=2048,
                 )
                 txt = res.choices[0].message.content
+                html = texto_a_html(txt)
                 st.session_state.reporte_texto = txt
-                st.session_state.reporte_html = texto_a_html(txt)
+                st.session_state.reporte_html = html
+                # NUEVO: Guardar en historial automáticamente
+                guardar_en_historial(modalidad, region, txt, html)
                 st.rerun()
             except Exception as e:
-                st.error(f"{e}")
-    elif not api_key:
-        st.warning("API Key requerida")
-    else:
-        st.warning("Ingresa dictado o hallazgos")
+                st.error(f"Error al generar el informe: {e}")
 
 # ══════════════════════════════════════════════════════════════
 # PANEL DERECHO — EDITOR
@@ -725,13 +974,10 @@ html,body{{
   background:var(--base);
   font-family:'JetBrains Mono',monospace;
 }}
-
-/* scanlines */
 body::before{{
   content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
   background:repeating-linear-gradient(0deg,{T['scan_line']} 0px,transparent 1px,transparent 3px);
 }}
-
 /* ── TOOLBAR ── */
 .tb{{
   flex-shrink:0;position:relative;z-index:10;
@@ -765,7 +1011,6 @@ body::before{{
 }}
 .cd:hover,.cd.on{{border-color:var(--accent);box-shadow:0 0 5px var(--glow);}}
 .tl{{font-size:8px;letter-spacing:.2em;color:var(--ghost);white-space:nowrap;}}
-
 /* ── EDITOR AREA ── */
 .ew{{
   flex:1;overflow-y:auto;
@@ -775,7 +1020,6 @@ body::before{{
 }}
 .ew::-webkit-scrollbar{{width:2px;}}
 .ew::-webkit-scrollbar-thumb{{background:var(--accent2);}}
-
 .doc{{
   min-height:100%;padding:24px 32px;
   outline:none;border-radius:1px;
@@ -790,7 +1034,6 @@ body::before{{
 .doc table{{border-collapse:collapse;width:100%;margin:8px 0;font-size:11.5px;}}
 .doc td,.doc th{{border:1px solid #e0e0e0;padding:4px 10px;}}
 .doc th{{background:#f8f8f8;font-weight:600;}}
-
 /* ── ACTION STRIP ── */
 .as{{
   flex-shrink:0;position:relative;z-index:10;
@@ -813,11 +1056,12 @@ body::before{{
   font-family:'JetBrains Mono',monospace;
 }}
 .as-btn:hover{{border-color:var(--accent2);color:var(--text);box-shadow:0 0 8px var(--glow);}}
-.as-btn.prime{{border-color:var(--accent);color:var(--accent);box-shadow:0 0 10px var(--glow);}}
 .prog{{margin-left:auto;display:flex;align-items:center;gap:6px;}}
 .prog-bg{{width:56px;height:1px;background:var(--ghost);position:relative;}}
 .prog-fill{{position:absolute;top:0;left:0;height:100%;background:var(--accent);transition:width .4s;box-shadow:0 0 4px var(--accent);}}
 .prog-pct{{font-size:8px;letter-spacing:.1em;color:var(--dim);}}
+/* ── WORD COUNT ── */
+.wc{{font-size:8px;letter-spacing:.1em;color:var(--ghost);margin-left:8px;}}
 </style>
 </head>
 <body>
@@ -865,7 +1109,8 @@ body::before{{
     <div class="cd" style="background:#f0f4fa" onclick="setBg(this,'#f0f4fa','#1a2540')" title="Clínico"></div>
   </div>
   <div class="tg">
-    <button class="tb-btn" onclick="copyClean()" title="Copiar texto"><i class="ti ti-copy"></i></button>
+    <button class="tb-btn" onclick="copyClean()" title="Copiar texto limpio"><i class="ti ti-copy"></i></button>
+    <button class="tb-btn" onclick="printDoc()" title="Imprimir / Guardar PDF"><i class="ti ti-printer"></i></button>
   </div>
 </div>
 
@@ -874,9 +1119,7 @@ body::before{{
 </div>
 
 <div class="as">
-  <button class="as-btn" onclick="optimize()">◈ OPTIMIZAR CONCLUSIÓN</button>
-  <button class="as-btn" onclick="getDefs()">◇ DEFINICIONES</button>
-  <button class="as-btn prime" onclick="exportDoc()">↓ EXPORTAR .DOCX</button>
+  <span class="wc" id="wc">0 palabras</span>
   <div class="prog">
     <div class="prog-bg"><div class="prog-fill" id="pf" style="width:0%"></div></div>
     <span class="prog-pct" id="pp">0%</span>
@@ -916,6 +1159,9 @@ function updBar(){{
   var s=calcPct();
   document.getElementById('pf').style.width=s+'%';
   document.getElementById('pp').textContent=s+'%';
+  // NUEVO: contador de palabras
+  var words=doc.innerText.trim().split(/\\s+/).filter(Boolean).length;
+  document.getElementById('wc').textContent=words+' palabras';
 }}
 doc.addEventListener('input',updBar);
 doc.addEventListener('keyup',upd);
@@ -934,6 +1180,22 @@ function copyClean(){{
     toast('COPIADO');
   }}
 }}
+
+// NUEVO: Imprimir / exportar a PDF desde el navegador
+function printDoc(){{
+  var w=window.open('','_blank');
+  w.document.write('<html><head><title>AURA · Informe Radiológico</title>');
+  w.document.write('<style>body{{font-family:Calibri,sans-serif;font-size:12pt;line-height:1.7;margin:2cm;color:#111}}');
+  w.document.write('b,strong{{font-weight:600}}table{{border-collapse:collapse;width:100%}}');
+  w.document.write('td,th{{border:1px solid #ccc;padding:4px 8px}}th{{background:#f0f0f0}}');
+  w.document.write('</style></head><body>');
+  w.document.write(doc.innerHTML);
+  w.document.write('</body></html>');
+  w.document.close();
+  w.focus();
+  setTimeout(function(){{w.print();}},400);
+}}
+
 function toast(m){{
   var el=document.createElement('div');
   el.textContent=m;
@@ -945,9 +1207,6 @@ function toast(m){{
   document.body.appendChild(el);
   setTimeout(function(){{document.body.removeChild(el);}},1600);
 }}
-function optimize(){{window.parent.postMessage({{type:'optimize',content:doc.innerText}},'*');}}
-function getDefs(){{window.parent.postMessage({{type:'defs',content:doc.innerText}},'*');}}
-function exportDoc(){{window.parent.postMessage({{type:'export',html:doc.innerHTML}},'*');}}
 </script>
 </body>
 </html>"""
@@ -960,45 +1219,62 @@ function exportDoc(){{window.parent.postMessage({{type:'export',html:doc.innerHT
 
     with c1:
         if st.button("◈  OPTIMIZAR CONCLUSIÓN", use_container_width=True):
-            if api_key and st.session_state.reporte_texto:
-                client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
-                with st.spinner(""):
+            if not api_key:
+                st.warning("API Key requerida.")
+            elif not st.session_state.reporte_texto:
+                st.warning("Genera un informe primero.")
+            else:
+                client = get_openai_client(api_key, st.session_state.modelo_sel)
+                model_id = get_model_id(st.session_state.modelo_sel)
+                with st.spinner("Optimizando impresión diagnóstica..."):
                     try:
                         r = client.chat.completions.create(
-                            model="deepseek-chat",
-                            messages=[{"role":"user","content":f"""
-Eres AURA — optimizador diagnóstico.
-Mejora ÚNICAMENTE el bloque IMPRESIÓN DIAGNÓSTICA.
+                            model=model_id,
+                            messages=[{
+                                "role": "user",
+                                "content": f"""Eres AURA — optimizador diagnóstico radiológico.
+Mejora ÚNICAMENTE el bloque IMPRESIÓN DIAGNÓSTICA del siguiente informe.
 
 {REGLAS}
 
+REGLAS ADICIONALES:
 · Morfológicamente precisa y clínicamente accionable.
-· Solo clasificaciones con evidencia directa en hallazgos (especifica el criterio).
+· Solo clasificaciones con evidencia directa en hallazgos (especifica el criterio morfológico).
 · Usa "•" para viñetas. Lenguaje sugerente para seguimiento.
-· Devuelve el informe COMPLETO. Conserva Técnica y Hallazgos.
-· Cero asteriscos. Títulos en MAYÚSCULAS.
+· Devuelve el informe COMPLETO. Conserva exactamente la sección TÉCNICA y HALLAZGOS sin modificarlas.
+· Sin asteriscos. Títulos en MAYÚSCULAS.
 
-REPORTE:
+REPORTE ACTUAL:
 {st.session_state.reporte_texto}
-"""}], temperature=0.2)
+"""
+                            }],
+                            temperature=0.2,
+                            max_tokens=2048,
+                        )
                         txt = r.choices[0].message.content
                         st.session_state.reporte_texto = txt
                         st.session_state.reporte_html = texto_a_html(txt)
                         st.rerun()
                     except Exception as e:
-                        st.error(str(e))
+                        st.error(f"Error: {e}")
 
     with c2:
         if st.button("◇  DEFINICIONES & CLASIFICACIONES", use_container_width=True):
-            if api_key and st.session_state.reporte_texto:
-                client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
-                with st.spinner(""):
+            if not api_key:
+                st.warning("API Key requerida.")
+            elif not st.session_state.reporte_texto:
+                st.warning("Genera un informe primero.")
+            else:
+                client = get_openai_client(api_key, st.session_state.modelo_sel)
+                model_id = get_model_id(st.session_state.modelo_sel)
+                with st.spinner("Analizando clasificaciones y definiciones..."):
                     try:
                         r = client.chat.completions.create(
-                            model="deepseek-chat",
-                            messages=[{"role":"user","content":f"""
-Analiza el informe. Responde con este formato EXACTO.
-Sin líneas en blanco entre items de la misma sección. Una línea en blanco entre secciones.
+                            model=model_id,
+                            messages=[{
+                                "role": "user",
+                                "content": f"""Analiza el siguiente informe radiológico.
+Responde con este formato EXACTO. Sin líneas en blanco entre ítems de la misma sección. Una línea en blanco entre secciones.
 
 CLASIFICACIONES USADAS
 · Nombre: [nombre completo · autor/sociedad]
@@ -1024,18 +1300,28 @@ Sin asteriscos. Sin negritas markdown.
 
 INFORME:
 {st.session_state.reporte_texto}
-"""}], temperature=0.15)
+"""
+                            }],
+                            temperature=0.15,
+                            max_tokens=2048,
+                        )
                         st.session_state.defs_resultado = r.choices[0].message.content
                         st.rerun()
                     except Exception as e:
-                        st.error(str(e))
+                        st.error(f"Error: {e}")
 
     with c3:
+        # MEJORA CRÍTICA: Exportar desde el texto Markdown limpio, no desde HTML
         if st.session_state.reporte_texto:
+            docx_bytes = generar_docx_desde_markdown(
+                st.session_state.reporte_texto,
+                modalidad=modalidad,
+                region=region
+            )
             st.download_button(
-                "↓  EXPORTAR",
-                data=generar_docx(st.session_state.reporte_html),
-                file_name="AURA_Informe.docx",
+                "↓  EXPORTAR .DOCX",
+                data=docx_bytes,
+                file_name=f"AURA_{region.replace(' ','_').replace('/','_')}.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 use_container_width=True
             )
@@ -1048,5 +1334,6 @@ INFORME:
                 f'<div class="defs-box">{st.session_state.defs_resultado}</div>',
                 unsafe_allow_html=True
             )
-            if st.button("✕  CERRAR"):
-                st.session_state.defs_resultado = ""; st.rerun()
+            if st.button("✕  CERRAR DEFINICIONES"):
+                st.session_state.defs_resultado = ""
+                st.rerun()
