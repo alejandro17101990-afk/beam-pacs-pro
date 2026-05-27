@@ -449,25 +449,57 @@ if generar:
         mod_sel=st.session_state.get("sel_mod","")
         reg_sel=st.session_state.get("reg_custom","").strip() or st.session_state.get("sel_reg","")
 
-        prompt=f"""Eres AURA, asistente de interpretación radiológica de alta precisión.
-Genera un informe radiológico estructurado y profesional.
+        prompt=f"""Eres AURA, sistema experto de interpretación radiológica de nivel subespecialista.
+Tu redacción es la de un radiólogo con fellowship en imagen musculoesquelética, neuroradiología o body imaging,
+con más de 15 años de práctica en centros de referencia de alto volumen.
 
 MODALIDAD: {mod_sel}
 REGIÓN: {reg_sel}
 
-REGLAS:
-· Lenguaje médico preciso. Sin ambigüedad.
-· PROHIBIDO: "cambios degenerativos" sin sustrato morfológico. Usa descriptores específicos.
-· Solo clasificaciones respaldadas por los hallazgos.
-· {instruc_tabla}
-· Sin markdown. Títulos en MAYÚSCULAS. Usa • para viñetas en la impresión.
+════════════════════════════════════════
+ESTÁNDARES DE REDACCIÓN OBLIGATORIOS
+════════════════════════════════════════
+
+PRECISIÓN MORFOLÓGICA:
+· Cada hallazgo debe incluir: localización exacta, extensión (mm o %), morfología, señal/densidad y repercusión estructural.
+· PROHIBIDO usar "cambios degenerativos" sin especificar: tipo, grado, distribución y correlato estructural.
+· PROHIBIDO: "alteración inespecífica", "podría corresponder". Usa afirmaciones diagnósticas directas o diagnósticos diferenciales jerarquizados.
+· Cuantifica siempre: dimensiones, porcentajes, grados, scores validados.
+
+CLASIFICACIONES OBLIGATORIAS SEGÚN HALLAZGO:
+· Menisco: Stoller (I-III), localización, tipo morfológico (horizontal/radial/complejo/raíz)
+· Cartílago: ICRS, Outerbridge, MOAKS
+· LCA/LCP: continuidad de fibras, edema óseo, ángulo de Blumensaat
+· Columna: Pfirrmann, Modic, Meyerding, NASCET
+· Hombro: Bigliani, Goutallier, Sugaya
+· Cadera: Tönnis, ángulo alpha (FAI)
+· Otros órganos: TIRADS, BI-RADS, PI-RADS, ASPECTS, Fazekas según corresponda
+· Siempre: grado + significado clínico del grado.
+
+ESTRUCTURA (títulos en MAYÚSCULAS, sin markdown, sin asteriscos):
+
+INDICACIÓN
+[Motivo clínico explícito o inferido. Si no se proporciona, redacta uno coherente con los hallazgos.]
+
+TÉCNICA
+[Descripción técnica estándar: secuencias/protocolos, planos, contraste, campo magnético. Nivel de detalle publicable.]
+
+HALLAZGOS
+[Sistemático por compartimentos o estructuras anatómicas. Cada estructura mencionada: normal o con hallazgo detallado. Nunca omitir estructuras principales sin aclarar su estado.]
+
+IMPRESIÓN DIAGNÓSTICA
+[Síntesis jerarquizada. Hallazgo principal primero. Usa • por punto.
+Cada viñeta: diagnóstico + clasificación/grado + implicación clínica.
+Última viñeta: correlación clínico-radiológica y orientación de manejo.]
+
+ESTILO: Voz activa, tiempo presente, oraciones cortas y precisas. Nivel: publicable en revista indexada o auditable por comité de pares.
+{instruc_tabla}
 
 PLANTILLA:
-{pt if pt else "INDICACIÓN\\nTÉCNICA\\nHALLAZGOS\\nIMPRESIÓN DIAGNÓSTICA"}
+{pt if pt else "INDICACIÓN\nTÉCNICA\nHALLAZGOS\nIMPRESIÓN DIAGNÓSTICA"}
 
-DICTADO:
+DICTADO DEL RADIÓLOGO:
 {st.session_state.dictado}"""
-
         with st.spinner("Generando informe..."):
             try:
                 res=cl.chat.completions.create(
@@ -555,28 +587,27 @@ with col_c:
 
 <!-- EDITOR RICO -->
 <div style="position:relative">
-<div style="background:{ED_BG};border:1px solid {BORDER};border-radius:10px 10px 0 0;
-  height:var(--editor-h,540px);padding:32px 40px;font-size:14px;line-height:1.8;
-  color:{TEXT};font-family:\'Outfit\',sans-serif;outline:none;overflow-y:auto"
+<div style="background:{ED_BG};border:1px solid {BORDER};border-radius:10px;
+  min-height:480px;height:540px;padding:32px 40px;font-size:14px;line-height:1.8;
+  color:{TEXT};font-family:\'Outfit\',sans-serif;outline:none;overflow-y:auto;
+  resize:vertical"
   id="richEditor" contenteditable="true"
   data-placeholder="Genera un informe para comenzar a editar, o escribe directamente aquí."
   oninput="updateToolbar()" onclick="updateToolbar()" onkeyup="updateToolbar()">
   {rep.replace(chr(10),"<br>") if rep else ""}
-</div>
-<!-- RESIZE HANDLE -->
-<div id="resizeHandle" style="
-  height:10px;background:{BORDER};border-radius:0 0 10px 10px;
-  cursor:ns-resize;display:flex;align-items:center;justify-content:center;
-  user-select:none;transition:background .15s"
-  onmouseenter="this.style.background=\'{ACCENT}40\'"
-  onmouseleave="this.style.background=\'{BORDER}\'">
-  <div style="width:40px;height:3px;border-radius:2px;background:{MUTED};opacity:.6"></div>
 </div>
 </div>
 
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono&family=Outfit:wght@300;400;500;600;700&display=swap');
 #richEditor:empty::before{{content:attr(data-placeholder);color:{MUTED};pointer-events:none}}
+#richEditor::-webkit-resizer{{
+  background:{CARD};border-radius:0 0 10px 0;
+}}
+#richEditor{{
+  resize:vertical;
+  overflow:auto;
+}}
 #richEditor h1{{font-size:22px;font-weight:700;margin:16px 0 8px;color:{ACCENT};font-family:'DM Serif Display',serif}}
 #richEditor h2{{font-size:17px;font-weight:600;margin:14px 0 6px;text-transform:uppercase;letter-spacing:.06em;color:{TEXT}}}
 #richEditor h3{{font-size:14px;font-weight:600;margin:10px 0 4px;color:{TEXT}}}
@@ -656,12 +687,18 @@ document.getElementById('richEditor').addEventListener('keydown',e=>{{
                         r=cl.chat.completions.create(
                             model=mid,
                             messages=[{"role":"user","content":
-                                f"""Mejora ÚNICAMENTE la IMPRESIÓN DIAGNÓSTICA.
-· Morfológicamente precisa y clínicamente accionable.
-· Solo clasificaciones con evidencia directa en los hallazgos.
-· Usa "•" para viñetas. Lenguaje sugerente para manejo.
-· Devuelve el informe COMPLETO. Sin asteriscos. Títulos en MAYÚSCULAS.
-INFORME:\n{rep2}"""}],
+                                f"""Eres un radiólogo subespecialista senior revisando la IMPRESIÓN DIAGNÓSTICA de un colega.
+Tu objetivo: elevarla al nivel de un informe de centro de referencia internacional.
+
+CRITERIOS DE EXCELENCIA para la IMPRESIÓN DIAGNÓSTICA:
+1. Jerarquía diagnóstica: hallazgo principal primero, secundarios después, incidentales al final.
+2. Cada viñeta (•) debe contener: [Estructura] + [Diagnóstico específico] + [Clasificación/grado validado] + [Implicación clínica o sugerencia de manejo].
+3. La última viñeta debe integrar correlación clínico-radiológica y orientar al clínico (ej: "Se sugiere valoración por ortopedia/neurología, considerar artroscopia/infiltración/seguimiento en X meses").
+4. Lenguaje afirmativo. Evita hedge words ("podría", "posible") salvo diagnóstico diferencial genuino.
+5. Si hay diagnósticos diferenciales, listarlos en orden de probabilidad con argumento morfológico.
+6. Sin asteriscos. Títulos en MAYÚSCULAS. Devuelve el informe COMPLETO sin alterar otras secciones.
+
+INFORME ACTUAL:\n{rep2}"""}],
                             temperature=0.2,max_tokens=2500
                         )
                         st.session_state.reporte=r.choices[0].message.content; st.rerun()
@@ -677,26 +714,35 @@ INFORME:\n{rep2}"""}],
                         r=cl.chat.completions.create(
                             model=mid,
                             messages=[{"role":"user","content":
-                                f"""Analiza el informe. Formato exacto. Sin líneas en blanco entre ítems.
+                                f"""Eres un radiólogo subespecialista y docente universitario. Analiza el siguiente informe radiológico con profundidad académica y clínica. Responde en español. Sin asteriscos ni markdown.
 
-CLASIFICACIONES USADAS
-· Nombre: [nombre · autor/sociedad]
-· Grado: [grado] — [significado clínico]
-· Justificación: [hallazgo del texto]
-· Ref: [Autor, año, revista]
-· URL: [PubMed o sociedad]
+Usa este formato exacto:
 
-CLASIFICACIONES SUGERIDAS
-[Solo si hay hallazgo directo. Si no: "Ninguna adicional justificada."]
+CLASIFICACIONES UTILIZADAS
+Para cada clasificación mencionada en el informe:
+  · Sistema: [nombre completo del sistema · sociedad que lo avala]
+  · Grado asignado: [grado] — Significado: [descripción clínica del grado]
+  · Evidencia en el informe: [cita textual del hallazgo que lo justifica]
+  · Referencia seminal: [Autor(es), Título abreviado, Revista, Año, DOI si disponible]
+  · Relevancia clínica: [qué implica este grado para el manejo del paciente]
 
-DEFINICIONES
-· [Término]: [1-2 líneas]
+CLASIFICACIONES ADICIONALES RECOMENDADAS
+[Solo si el informe describe hallazgos que se podrían gradificar con sistemas no utilizados. Si no aplica: "El informe utiliza los sistemas apropiados para los hallazgos descritos."]
+  · Sistema sugerido: [nombre] — Hallazgo que lo justifica: [descripción]
+  · Por qué añadiría valor: [impacto clínico o quirúrgico]
 
-CORRELACIÓN CLÍNICA
-[2-3 líneas. Lenguaje sugerente.]
+GLOSARIO DE TÉRMINOS TÉCNICOS
+Para cada término especializado del informe:
+  · [Término]: [definición precisa en 2-3 líneas, con contexto anatómico y relevancia diagnóstica]
 
-Sin asteriscos.
-INFORME:\n{rep2}"""}],
+FISIOPATOLOGÍA RELEVANTE
+[Párrafo de 3-4 líneas explicando el mecanismo fisiopatológico subyacente a los hallazgos principales. Nivel: residente avanzado / fellow.]
+
+CORRELACIÓN CLÍNICA Y ORIENTACIÓN AL TRATANTE
+[Párrafo de 4-5 líneas dirigido al médico clínico: qué implican estos hallazgos para el paciente, qué opciones terapéuticas se abren, qué estudios complementarios podrían ser útiles, y cuál sería el seguimiento radiológico recomendado.]
+
+INFORME A ANALIZAR:
+{rep2}"""}],
                             temperature=0.15,max_tokens=2000
                         )
                         st.session_state.defs=r.choices[0].message.content
