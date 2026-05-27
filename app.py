@@ -554,13 +554,24 @@ with col_c:
 </div>
 
 <!-- EDITOR RICO -->
-<div style="background:{ED_BG};border:1px solid {BORDER};border-radius:10px;
-  min-height:520px;padding:32px 40px;font-size:14px;line-height:1.8;
-  color:{TEXT};font-family:'Outfit',sans-serif;outline:none;overflow-y:auto"
+<div style="position:relative">
+<div style="background:{ED_BG};border:1px solid {BORDER};border-radius:10px 10px 0 0;
+  height:var(--editor-h,540px);padding:32px 40px;font-size:14px;line-height:1.8;
+  color:{TEXT};font-family:\'Outfit\',sans-serif;outline:none;overflow-y:auto"
   id="richEditor" contenteditable="true"
   data-placeholder="Genera un informe para comenzar a editar, o escribe directamente aquí."
-  oninput="syncEditor()" onclick="updateToolbar()" onkeyup="updateToolbar()">
+  oninput="updateToolbar()" onclick="updateToolbar()" onkeyup="updateToolbar()">
   {rep.replace(chr(10),"<br>") if rep else ""}
+</div>
+<!-- RESIZE HANDLE -->
+<div id="resizeHandle" style="
+  height:10px;background:{BORDER};border-radius:0 0 10px 10px;
+  cursor:ns-resize;display:flex;align-items:center;justify-content:center;
+  user-select:none;transition:background .15s"
+  onmouseenter="this.style.background=\'{ACCENT}40\'"
+  onmouseleave="this.style.background=\'{BORDER}\'">
+  <div style="width:40px;height:3px;border-radius:2px;background:{MUTED};opacity:.6"></div>
+</div>
 </div>
 
 <style>
@@ -631,12 +642,6 @@ document.getElementById('richEditor').addEventListener('keydown',e=>{{
 }});
 </script>
 """,unsafe_allow_html=True)
-
-    # Textarea oculta para sincronizar con el estado de Streamlit
-    reporte_sync=st.text_area(
-        "reporte_sync",value=st.session_state.reporte,
-        height=1,label_visibility="collapsed",key="reporte_sync_ta"
-    )
 
     st.markdown("<div style='height:8px'></div>",unsafe_allow_html=True)
     a1,a2,a3=st.columns(3)
