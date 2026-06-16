@@ -1,5 +1,5 @@
 """
-AURA v4 — Radiology Copilot
+Beam AI v4 — Radiology Copilot
 Arquitectura enterprise: 3 paneles, aprendizaje de estilo, QA contextual, KB modular.
 """
 
@@ -9,7 +9,6 @@ from docx import Document
 from docx.shared import Pt, RGBColor
 import speech_recognition as sr
 import io
-import json
 import re
 from openai import OpenAI
 
@@ -17,7 +16,7 @@ from openai import OpenAI
 # CONFIGURACIÓN
 # ══════════════════════════════════════════════════════════════
 st.set_page_config(
-    page_title="AURA · Radiology Copilot",
+    page_title="Beam AI · Radiology Copilot",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -524,7 +523,7 @@ def construir_sistema_prompt(modalidad, region, instrucciones, plantilla_txt, cl
         for k, v in clasif_activas.items():
             clasif_ctx += f"• {k}: Grado {v}\n"
 
-    return f"""Eres AURA, el copiloto de redacción radiológica más avanzado disponible. Eres un radiólogo experto de subespecialidad con 20 años de experiencia.
+    return f"""Eres Beam AI, el copiloto de redacción radiológica más avanzado disponible. Eres un radiólogo experto de subespecialidad con 20 años de experiencia.
 
 MODALIDAD: {modalidad}
 REGIÓN ANATÓMICA: {region}
@@ -974,7 +973,7 @@ st.markdown(f"""
 <div class="aura-topbar">
     <div class="aura-logo">
         <div class="logo-pulse"></div>
-        AURA
+        BEAM AI
     </div>
     <div class="tb-sep"></div>
     <span class="tb-badge">Radiology Copilot v4</span>
@@ -1100,7 +1099,7 @@ with col_izq:
         st.markdown('<span class="plabel">EJEMPLO DE MI INFORME</span>', unsafe_allow_html=True)
         ejemplo_estilo = st.text_area(
             "Ejemplo", height=80, label_visibility="collapsed",
-            placeholder="Pega aquí un informe tuyo anterior para que AURA aprenda tu estilo..."
+            placeholder="Pega aquí un informe tuyo anterior para que Beam AI aprenda tu estilo..."
         )
         if st.button("Aprender mi estilo"):
             if ejemplo_estilo.strip():
@@ -1133,7 +1132,7 @@ with col_izq:
     # ── Botón principal ──
     st.markdown("<div style='padding:12px 0 6px 0'>", unsafe_allow_html=True)
     st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
-    procesar = st.button("⬡  GENERAR INFORME AURA", use_container_width=True)
+    procesar = st.button("⬡  GENERAR INFORME BEAM AI", use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
     # Historial
@@ -1337,7 +1336,6 @@ body{{background:var(--bg-0);font-family:var(--sans);overflow:hidden;display:fle
 </head>
 <body>
 
-<!-- FORMAT BAR -->
 <div class="fbar">
   <div class="fg">
     <select class="fsel" id="fontSel" onchange="applyFont(this.value)" style="width:80px">
@@ -1376,17 +1374,14 @@ body{{background:var(--bg-0);font-family:var(--sans);overflow:hidden;display:fle
   </div>
 </div>
 
-<!-- SLASH AUTOCOMPLETE MENU (hidden by default) -->
 <div class="slash-menu" id="slashMenu" style="display:none"></div>
 
-<!-- EDITOR -->
 <div class="editor-wrap" id="editorWrap">
   <div id="doc" contenteditable="true" spellcheck="true" lang="es">
     {contenido_inicial}
   </div>
 </div>
 
-<!-- ACTION BAR -->
 <div class="abar">
   <button class="ab" onclick="sendMsg('optimize')">✦ Optimizar</button>
   <button class="ab" onclick="sendMsg('qa')">◈ Auditar QA</button>
@@ -1707,7 +1702,7 @@ INFORME:
             st.download_button(
                 "↓ Exportar .docx",
                 data=docx_bytes,
-                file_name=f"AURA_{region.replace(' ','_').replace('/','_')}_{modalidad[:2]}.docx",
+                file_name=f"BEAM_AI_{region.replace(' ','_').replace('/','_')}_{modalidad[:2]}.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 use_container_width=True
             )
@@ -1829,7 +1824,7 @@ INFORME:
             "definiciones": "DEFINICIONES & CLASIFICACIONES",
             "qa_full": "AUDITORÍA QA COMPLETA",
         }
-        tipo_label = tipo_labels.get(st.session_state.copilot_tipo, "COPILOTO AURA")
+        tipo_label = tipo_labels.get(st.session_state.copilot_tipo, "COPILOTO BEAM AI")
         tipo_color = {
             "differential": "#4a90cc",
             "definiciones": "#6a9a4a",
