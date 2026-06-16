@@ -1,321 +1,78 @@
 import streamlit as st
-from streamlit_quill import st_quill
 
-st.set_page_config(
-    page_title="Beam AI",
-    page_icon="🩻",
-    layout="wide",
-    initial_sidebar_state="collapsed"
+# 1. CONFIGURACIÓN DE LA PÁGINA
+# Esto hace que la app ocupe todo el ancho de la pantalla
+st.set_page_config(layout="wide", page_title="Beam AI")
+
+# --- COLUMNA IZQUIERDA (BARRA LATERAL) ---
+with st.sidebar:
+    st.markdown("### 🟣 BEAM AI")
+    
+    if st.button("+ Nuevo informe", use_container_width=True, type="primary"):
+        pass # Aquí irá la lógica para limpiar el editor
+        
+    st.write("---")
+    
+    st.markdown("**ESTUDIOS RECIENTES**")
+    st.button("TC Abdomen y Pelvis\n12/05/2025", use_container_width=True)
+    st.button("RM Rodilla Derecha\n11/05/2025", use_container_width=True)
+    st.button("TC Tórax sin contraste\n10/05/2025", use_container_width=True)
+
+
+# --- COLUMNA CENTRAL (ÁREA PRINCIPAL) ---
+
+# Encabezado (Título y botones superiores)
+col_titulo, col_botones = st.columns([3, 1]) # El título toma más espacio que los botones
+
+with col_titulo:
+    st.markdown("#### TC ABDOMEN Y PELVIS CON CONTRASTE")
+    st.caption("ID: EST-2025-0805678 • 12 Mayo 2025, 10:30 AM")
+
+with col_botones:
+    # Contenedor para alinear los botones a la derecha
+    btn1, btn2 = st.columns(2)
+    with btn1:
+        st.button("🎙️ Dictado")
+    with btn2:
+        # Usamos type="primary" para que resalte como el botón de IA en tu diseño
+        st.button("✨ IA activa", type="primary")
+
+st.divider() # Línea separadora
+
+# Área del Editor de Texto
+st.markdown("**HALLAZGOS**")
+
+# Texto por defecto (tu plantilla)
+texto_inicial = """Hígado: De tamaño, forma y contornos normales, con atenuación homogénea. No se identifican lesiones focales. Vía biliar intra y extrahepática no dilatada.
+
+Vesícula biliar: De paredes delgadas, sin litiasis radiopacas.
+
+Páncreas: De aspecto normal, sin lesiones focales ni dilatación del conducto pancreático.
+
+Bazo: De tamaño normal, con atenuación homogénea, sin lesiones focales.
+
+Riñones: De tamaño y morfología conservada, con adecuada captación y eliminación del contraste. No se observan litiasis ni hidronefrosis.
+
+CONCLUSIÓN
+1. Estudio sin hallazgos tomográficos sugestivos de patología abdominal o pélvica aguda.
+2. Hallazgos descritos."""
+
+# El text_area de Streamlit funcionará como tu editor principal
+reporte = st.text_area(
+    "Editor", 
+    value=texto_inicial, 
+    height=500, # Altura del cuadro de texto
+    label_visibility="collapsed" # Ocultamos la etiqueta "Editor" para que se vea más limpio
 )
 
-# ======================================
-# ESTADO
-# ======================================
-
-if "show_left" not in st.session_state:
-    st.session_state.show_left = True
-
-if "show_right" not in st.session_state:
-    st.session_state.show_right = True
-
-# ======================================
-# CSS
-# ======================================
-
-st.markdown("""
-<style>
-
-html, body, .stApp{
-    background:#0b0f14;
-    color:white;
-}
-
-header,
-footer,
-#MainMenu{
-    visibility:hidden;
-}
-
-.block-container{
-    max-width:100%;
-    padding:0.8rem 1rem;
-}
-
-/* TOPBAR */
-
-.topbar{
-    background:#11151c;
-    border:1px solid #1f242d;
-    border-radius:18px;
-    height:62px;
-    padding:0 25px;
-
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-
-    margin-bottom:15px;
-}
-
-.logo{
-    font-size:24px;
-    font-weight:700;
-}
-
-.status{
-    color:#8b949e;
-    font-size:14px;
-}
-
-/* CARDS */
-
-.card{
-    background:#11151c;
-    border:1px solid #1f242d;
-    border-radius:20px;
-    padding:20px;
-}
-
-/* BOTONES */
-
-.stButton>button{
-    border:none;
-    border-radius:12px;
-    background:#171b22;
-    color:white;
-}
-
-.stButton>button:hover{
-    background:#222831;
-}
-
-/* EXPANDERS */
-
-.streamlit-expanderHeader{
-    font-size:14px;
-}
-
-/* FOOTER */
-
-.footer{
-    text-align:center;
-    color:#7d8590;
-    font-size:13px;
-    margin-top:10px;
-}
-
-</style>
-""", unsafe_allow_html=True)
-
-# ======================================
-# TOPBAR
-# ======================================
-
-st.markdown("""
-<div class="topbar">
-
-<div class="logo">
-🩻 BEAM AI
-</div>
-
-<div class="status">
-● Autoguardado
-</div>
-
-</div>
-""", unsafe_allow_html=True)
-
-# ======================================
-# CONTROLES
-# ======================================
-
-c1, c2, c3, c4 = st.columns([1,1,6,1])
-
-with c1:
-
-    if st.button("☰"):
-
-        st.session_state.show_left = (
-            not st.session_state.show_left
-        )
-
-with c2:
-
-    if st.button("🤖"):
-
-        st.session_state.show_right = (
-            not st.session_state.show_right
-        )
-
-# ======================================
-# LAYOUT DINÁMICO
-# ======================================
-
-if (
-    st.session_state.show_left
-    and
-    st.session_state.show_right
-):
-
-    left, center, right = st.columns(
-        [1.1, 5, 1.5]
-    )
-
-elif st.session_state.show_left:
-
-    left, center = st.columns(
-        [1.2, 6]
-    )
-
-    right = None
-
-elif st.session_state.show_right:
-
-    center, right = st.columns(
-        [6, 1.5]
-    )
-
-    left = None
-
-else:
-
-    center = st.container()
-    left = None
-    right = None
-
-# ======================================
-# SIDEBAR
-# ======================================
-
-if left:
-
-    with left:
-
-        st.markdown(
-            "<div class='card'>",
-            unsafe_allow_html=True
-        )
-
-        st.subheader("Navegación")
-
-        st.button("➕ Nuevo")
-        st.button("🕒 Recientes")
-        st.button("📄 Plantillas")
-        st.button("⭐ Favoritos")
-        st.button("⚙ Configuración")
-
-        st.markdown(
-            "</div>",
-            unsafe_allow_html=True
-        )
-
-# ======================================
-# EDITOR
-# ======================================
-
-with center:
-
-    st.markdown(
-        """
-        <div class='card'>
-        <h3>Informe Radiológico</h3>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    a1, a2, a3, a4, a5 = st.columns(5)
-
-    with a1:
-        st.button("Plantilla")
-
-    with a2:
-        st.button("Optimizar")
-
-    with a3:
-        st.button("Conclusión")
-
-    with a4:
-        st.button("Clasificaciones")
-
-    with a5:
-        st.button("Exportar")
-
-    informe = st_quill(
-        value="""
-<h2>TÉCNICA</h2>
-<p></p>
-
-<h2>HALLAZGOS</h2>
-<p></p>
-
-<h2>CONCLUSIÓN</h2>
-<p></p>
-""",
-        html=True,
-        toolbar=[
-            ['bold', 'italic', 'underline'],
-            [{'header':[1,2,3,False]}],
-            [{'list':'ordered'},
-             {'list':'bullet'}],
-            ['clean']
-        ]
-    )
-
-# ======================================
-# IA
-# ======================================
-
-if right:
-
-    with right:
-
-        st.markdown(
-            "<div class='card'>",
-            unsafe_allow_html=True
-        )
-
-        st.subheader("Asistente IA")
-
-        with st.expander(
-            "Sugerencias"
-        ):
-            st.write(
-                "Las sugerencias aparecerán aquí."
-            )
-
-        with st.expander(
-            "Clasificaciones"
-        ):
-            st.write(
-                "Stoller, BI-RADS, TIRADS..."
-            )
-
-        with st.expander(
-            "Conclusiones"
-        ):
-            st.write(
-                "Conclusiones sugeridas."
-            )
-
-        with st.expander(
-            "Calidad"
-        ):
-            st.success(
-                "Sin omisiones detectadas."
-            )
-
-        st.markdown(
-            "</div>",
-            unsafe_allow_html=True
-        )
-
-# ======================================
-# FOOTER
-# ======================================
-
-st.markdown("""
-<div class="footer">
-✓ Autoguardado • IA preparada • Calidad del informe: Excelente
-</div>
-""", unsafe_allow_html=True)
+# Botones inferiores (Sugerir conclusión, etc.)
+col_inf1, col_inf2, col_inf3, col_inf4 = st.columns([2, 2, 2, 4])
+
+with col_inf1:
+    st.button("+ Sugerir conclusión")
+with col_inf2:
+    st.selectbox("Estilo", ["Estilo académico", "Conservador", "Directo"], label_visibility="collapsed")
+with col_inf3:
+    st.selectbox("Destinatario", ["Para médico tratante", "Para paciente"], label_visibility="collapsed")
+with col_inf4:
+    st.markdown("<p style='text-align: right; color: gray; margin-top: 10px;'>✓ Guardado 10:30 AM</p>", unsafe_allow_html=True)
