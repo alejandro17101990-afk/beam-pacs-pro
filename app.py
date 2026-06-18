@@ -1,508 +1,307 @@
-# Beam AI: Cambios Clave y Guía de Migración
-
-## Resumen Ejecutivo
-
-Tu aplicación ha pasado de ser un **editor PACS académico** a un **editor conversacional de IA premium**. Los cambios son profundos pero deliberados.
-
-| Aspecto | v5 (Original) | v6 (Nuevo) |
-|--------|--------------|-----------|
-| **Apariencia** | 5 temas complejos | 2 temas minimalistas |
-| **Layout** | Sidebar pesado | Panel lateral elegante |
-| **Funciones** | 15+ componentes | 8 componentes core |
-| **Inspiración** | PACS clínico | ChatGPT/Claude |
-| **Líneas de CSS** | ~400 | ~250 |
-| **Complejidad** | Alta | Baja |
-| **UX** | Profesional-académica | Premium-moderna |
-
----
-
-## ¿Qué Se Eliminó?
-
-### ❌ Features Removidas (Deliberadamente)
-
-```
-✗ Tema selector con 5 opciones
-  → Ahora: Solo Dark + Light
-
-✗ Expander "TAMAÑO DEL EDITOR"
-  → Ahora: Auto-responsive
-
-✗ Clasificaciones automáticas
-  → Ahora: Solo redacción
-
-✗ Sección "DEFINICIONES" en expander
-  → Ahora: Focus 100% en escritura
-
-✗ Buscador de clasificaciones
-  → Ahora: Minimalismo puro
-
-✗ Slider de completitud con barra
-  → Ahora: Simplicidad visual
-```
-
-**Razón**: Distracción visual. Radiológos trabajando 8+ horas necesitan minimizar ruido.
-
-### ✅ Features Preservadas
-
-```
-✓ Dictado de voz (speech-to-text)
-✓ Upload de plantilla DOCX
-✓ Generación con IA (DeepSeek)
-✓ Edición HTML del informe
-✓ Exportación a DOCX
-✓ Reglas clínicas embedidas
-✓ API Key personalizada
-```
-
-### 🎯 Features Nuevas
-
-```
-✓ Layout horizontal/vertical responsive
-✓ Tema claro automático (Light)
-✓ Editor textarea simplificado
-✓ Botón "Refinar" para mejorar conclusiones
-✓ CSS minimalista y moderno
-✓ Arquitectura preparada para draggable dividers
-✓ Mejor performance (menos componentes = menos re-renders)
-```
-
----
-
-## Cambios de Diseño Visual
-
-### Paleta: De Compleja a Minimalista
-
-#### v5 (5 temas)
-```
-Eden Dark       → 40+ colores custom
-Eden Light      → 40+ colores custom
-PACS Clásico    → Verde neon (#00aa66)
-Radiology Blue  → Azul médico (#0a8ad8)
-Warm Clinical   → Terracota (#c07830)
-```
-
-#### v6 (2 temas)
-```
-Dark            → Grises + Azul #3b82f6
-Light           → Blancos + Azul #3b82f6
-```
-
-**Ventaja**: Coherencia visual. El azul (#3b82f6) es el color que usan Google, Microsoft, OpenAI. Comunica "tecnología confiable".
-
-### Tipografía: Simplificada
-
-#### v5
-```css
-font-family: 'Inter', 'IBM Plex Mono', 'Arial'
-Font weights: 300, 400, 500, 600, 700
-```
-
-#### v6
-```css
-font-family: 'Inter', -apple-system, BlinkMacSystemFont
-Font weights: 400, 500, 600, 700
-Monospace solo si es necesario
-```
-
-**Ventaja**: Carga más rápido, consistente en todas las plataformas.
-
-### Espaciado: Menos es Más
-
-#### v5
-```
-Panel izquierdo: max 25% ancho, muy poblado
-Expanders anidados profundamente
-Muchos gaps y paddings
-```
-
-#### v6
-```
-Panel izquierdo: 28% ancho, breathing room
-Expanders máximo 2 niveles
-Gaps de 8-12px consistentes
-```
-
----
-
-## Cambios de Estructura HTML/CSS
-
-### Antes (v5): CSS Inline Pesado
-
-```python
-st.markdown(f"""
-<style>
-.beam-topbar {{ background: {T['topbar_bg']}; border-bottom: 1px solid {T['topbar_border']}; ... }}
-.ldot {{ width: 7px; ... }}
-.tbadge {{ font-size: 10px; ... }}
-... [400+ líneas]
-</style>
-""", unsafe_allow_html=True)
-```
-
-**Problema**: Difícil de mantener, muchas variables anidadas.
-
-### Ahora (v6): CSS Modular y Limpio
-
-```python
-st.markdown(f"""
-<style>
-/* ─── TOPBAR ─── */
-.topbar {{ 
-    position: sticky; z-index: 1000;
-    background: {T['bg_panel']}; 
-    border-bottom: 1px solid {T['border']};
-    padding: 12px 20px;
-}}
-.logo {{ font-weight: 700; font-size: 14px; }}
-/* ─── BUTTONS ─── */
-.btn-theme {{ background: {T['button']}; ... }}
-</style>
-""", unsafe_allow_html=True)
-```
-
-**Ventaja**: Secciones claras, fácil de editar.
-
----
-
-## Cambios de Flujo de Datos
-
-### Input Flow: Simplificado
-
-#### v5
-```
-Dictado (voice) → Transcribir → 
-  Concat a session_state.dictado →
-  Mostrar en textarea →
-  Usuario puede editar →
-  Enviar a API con 10+ parámetros
-```
-
-#### v6
-```
-Dictado (voice) → Transcribir → 
-  Update session_state.dictado →
-  Usar directamente en API
-```
-
-**Menos pasos = menos errores**.
-
-### API Call: Más Simple
-
-#### v5
-```python
-prompt = f"""
-{REGLAS_CLINICAS}
-INSTRUCCIÓN SOBRE TABLAS: ...
-PLANTILLA BASE: {plantilla_txt}
-DIRECTRICES ADICIONALES: {instrucciones}
-DICTADO: {dictado}
-"""
-res = client.chat.completions.create(
-    model="deepseek-chat",
-    messages=[{"role": "system", "content": prompt}],
-    temperature=0.1
-)
-```
-
-#### v6
-```python
-prompt = f"""
-Eres experto en reportes {modalidad} de {region}.
-{REGLAS_CLINICAS}
-
-DICTADO:
-{dictado}
-"""
-res = client.chat.completions.create(
-    model="deepseek-chat",
-    messages=[{"role": "user", "content": prompt}],
-    temperature=0.15,
-    max_tokens=2000
-)
-```
-
-**Ventaja**: Prompt más simple = respuestas más consistentes. Temperature 0.15 vs 0.1 es mejor para radiología.
-
----
-
-## Cambios de UX/Flujo
-
-### Antes: Muchos Pasos
-
-```
-1. Seleccionar tema (expander)
-2. Seleccionar modalidad + región
-3. Expandir "Dictado de voz"
-4. Grabar o escribir
-5. Abrir "Configuración"
-6. Cargar plantilla
-7. Editar directrices
-8. Click "Procesar"
-9. Esperar spinner
-10. Editar informe en iframe
-11. Click "Refinar"
-12. Click "Exportar"
-```
-
-**Problema**: 12 pasos = fatiga cognitiva.
-
-### Ahora: Flujo Lineal
-
-```
-1. API Key (si no está en secrets)
-2. Seleccionar modalidad + región (visible siempre)
-3. Expandir "Dictado" (default abierto)
-4. Grabar o escribir
-5. Click "GENERAR"
-6. Editor se actualiza automáticamente
-7. Editar si necesario
-8. Click "Refinar" o exportar
-```
-
-**Ventaja**: 8 pasos, flujo natural, menos decisiones.
-
----
-
-## Cómo Migrar de v5 a v6
-
-### Paso 1: Backup
-
-```bash
-cp app_v5.py app_v5_backup.py
-```
-
-### Paso 2: Reemplazar Archivo
-
-```bash
-# Usar beam_ai_v6_enhanced.py como nueva versión base
-cp beam_ai_v6_enhanced.py app.py
-```
-
-### Paso 3: Verificar Secrets
-
-Asegurate de tener `~/.streamlit/secrets.toml`:
-
-```toml
-[default]
-deepseek_key = "sk-xxxx"  # Tu clave DeepSeek
-```
-
-### Paso 4: Testear
-
-```bash
-streamlit run app.py
-```
-
-### Paso 5: Customización (Opcional)
-
-Si quieres mantener algunas features de v5:
-
-#### A. Agregar temas adicionales
-
-```python
-TEMAS = {
-    "Dark": { ... },
-    "Light": { ... },
-    "Radiology Blue": {  # De v5
-        "bg_app": "#040d18",
-        ...
-    }
+import json
+import streamlit as st
+import streamlit.components.v1 as components
+from core.ai import RadiologyCopilot
+from core.knowledge import KnowledgeBase
+from services.export import export_to_docx
+from services.storage import DraftStorage
+
+st.set_page_config(page_title="Beam AI", layout="wide", initial_sidebar_state="collapsed")
+
+with open("ui/styles.css", "r", encoding="utf-8") as f:
+    st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
+st.session_state.setdefault("theme", "dark")
+
+defaults = {
+    "draft_report": "",
+    "findings_input": "",
+    "layout_mode": "horizontal",
+    "input_width": 35,
+    "show_input": True,
+    "last_saved": "",
+    "selected_template": "RM Rodilla Estándar",
 }
-```
+for k, v in defaults.items():
+    st.session_state.setdefault(k, v)
 
-#### B. Agregar más regiones
+storage = DraftStorage()
+if not st.session_state.draft_report:
+    loaded = storage.load_draft()
+    if loaded:
+        st.session_state.draft_report = loaded
 
-```python
-REGIONES = [
-    "Rodilla", "Columna lumbar", "Columna cervical",
-    # Agregar más aquí
-    "Mama", "Tiroides",  # De v5
-]
-```
+kb = KnowledgeBase("data/knowledge_base.json")
+copilot = RadiologyCopilot(api_key=st.secrets.get("deepseek_key", ""), knowledge_base=kb)
 
-#### C. Restaurar clasificaciones
+# ─── TOP BAR ──────────────────────────────────────────────────────────
 
-```python
-# En "Configuración"
-with st.expander("⚙️ Configuración", expanded=False):
-    incluir_clasificaciones = st.checkbox(
-        "Incluir clasificaciones automáticas"
-    )
-    if incluir_clasificaciones:
-        # Llamar API extra para generar clasificaciones
-        pass
-```
+c1, c2, c3, c4, c5, c6, c7, c8 = st.columns([0.35, 0.65, 0.65, 1.1, 1.8, 0.55, 0.9, 0.35])
 
----
+with c1:
+    st.markdown('<div class="brand">BEAM AI</div>', unsafe_allow_html=True)
 
-## Métricas: Mejoras de Performance
+with c2:
+    is_horiz = st.session_state.layout_mode == "horizontal"
+    if st.button("☰ Horizontal" if is_horiz else "☷ Vertical", key="layout_btn", use_container_width=True):
+        st.session_state.layout_mode = "vertical" if is_horiz else "horizontal"
 
-| Métrica | v5 | v6 | Mejora |
-|---------|----|----|--------|
-| **CSS Lines** | 400+ | 250 | -37% |
-| **JS Complexity** | Alto | Bajo | -50% |
-| **React Re-renders** | ~15 | ~8 | -46% |
-| **Carga inicial** | 2.5s | 1.8s | -28% |
-| **Tamaño HTML topbar** | ~1KB | ~400b | -60% |
+with c3:
+    label = "Ocultar" if st.session_state.show_input else "Mostrar"
+    if st.button(f"⊞ {label}", key="toggle_input", use_container_width=True):
+        st.session_state.show_input = not st.session_state.show_input
 
-**Resultado**: Aplicación más rápida, menos frustración en conexiones lentas.
+with c4:
+    wc1, wc2, wc3 = st.columns([0.2, 0.6, 0.2])
+    with wc1:
+        if st.button("−", key="narrower"):
+            st.session_state.input_width = max(15, st.session_state.input_width - 5)
+    with wc2:
+        st.markdown(
+            f'<div class="width-indicator">{st.session_state.input_width}%</div>',
+            unsafe_allow_html=True,
+        )
+    with wc3:
+        if st.button("+", key="wider"):
+            st.session_state.input_width = min(65, st.session_state.input_width + 5)
 
----
+with c5:
+    generated = st.button("Generar", key="generate", type="primary", use_container_width=True)
 
-## Qué Perdiste (Y Por Qué)
+with c6:
+    if st.button("Copiar", key="copy_btn"):
+        st.session_state.copy_trigger = True
 
-### ❌ 5 Temas Diferentes
+with c7:
+    col_a, col_b = st.columns([1, 0.4])
+    with col_a:
+        docx_data = export_to_docx(st.session_state.draft_report)
+        st.download_button(
+            "DOCX",
+            data=docx_data,
+            file_name="BeamAI_Informe.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            key="export_docx",
+        )
+    with col_b:
+        theme_label = "☀️" if st.session_state.theme == "dark" else "🌙"
+        if st.button(theme_label, key="theme_btn"):
+            st.session_state.theme = "light" if st.session_state.theme == "dark" else "dark"
 
-**Por qué se removió**: 
-- Solo 0.1% de usuarios cambiaban tema
-- Maintenance burden (cualquier bug afecta 5 temas)
-- Dark/Light cubren 99.9% de casos
-
-**Si lo necesitas**:
-```python
-# Agregar fácilmente
-TEMAS["Clinical Warm"] = { ... }
-```
-
-### ❌ Sidebar Colapsable Original
-
-**Por qué se cambió**:
-- Streamlit sidebar es limitado
-- Nuevo layout permite panel que ocupe menos espacio
-
-**Si lo necesitas**:
-```python
-# En v6.6 agregaremos draggable divider
-# Por ahora: drag horizontal es posible con:
-col_a.write(f"width: {st.session_state.panel_ancho}%")
-```
-
-### ❌ Definiciones en Expander
-
-**Por qué se removió**:
-- Radiológos no usan mientras dictan
-- Mejor como feature separada (v7)
-
-**Si lo necesitas**:
-```python
-# Agregar botón en toolbar
-if st.button("📚 Definiciones"):
-    # Popup o modal con clasificaciones
+with c8:
     pass
-```
 
----
+st.markdown(
+    f"<script>document.documentElement.setAttribute('data-theme','{st.session_state.theme}')</script>",
+    unsafe_allow_html=True,
+)
 
-## Qué Ganaste
+# ─── AUTO-SAVE BAR ───────────────────────────────────────────────────
 
-### ✅ Experiencia ChatGPT-like
+if st.session_state.last_saved:
+    st.markdown(
+        f'<div class="autosave-bar">{st.session_state.last_saved}</div>',
+        unsafe_allow_html=True,
+    )
 
-Usuarios reportan:
-- "Se siente más moderno"
-- "Menos confuso"
-- "Puedo trabajar más rápido"
+# ─── GENERATE LOGIC ──────────────────────────────────────────────────
 
-### ✅ CSS Simplificado
+if generated:
+    text = st.session_state.findings_input or st.session_state.draft_report
+    if text.strip():
+        with st.spinner("Generando informe estructurado..."):
+            result = copilot.generate_report(text)
+        st.session_state.draft_report = result
+        storage.save_draft(result)
+        st.session_state.last_saved = "Generado por IA"
 
-Antes: 400 líneas de CSS anidado
-Ahora: 250 líneas, modular
+# ─── COPY LOGIC ──────────────────────────────────────────────────────
 
-### ✅ Menos Bugs
+if st.session_state.pop("copy_trigger", False):
+    safe_text = json.dumps(st.session_state.draft_report)
+    components.html(
+        f"""<script>
+navigator.clipboard.writeText({safe_text}).then(() => {{
+const t=document.createElement('div');
+t.textContent='Copiado al portapapeles';
+t.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#252525;color:#e5e5e5;padding:10px 20px;border-radius:10px;font-size:13px;z-index:9999;border:1px solid #333;';
+document.body.appendChild(t);setTimeout(()=>t.remove(),2000);
+}});
+</script>""",
+        height=0,
+    )
 
-Menos features = menos puntos de fallo.
+# ─── DICTATION COMPONENT ─────────────────────────────────────────────
 
-### ✅ Preparado para Futuro
+dictation_html = """<div style="display:flex;gap:6px;align-items:center;">
+<button id="dStart" style="border:1px solid var(--border-color);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);font-size:12px;padding:4px 12px;height:32px;cursor:pointer;">🎤 Iniciar</button>
+<button id="dStop" style="border:1px solid var(--border-color);border-radius:6px;background:var(--bg-tertiary);color:var(--text-primary);font-size:12px;padding:4px 12px;height:32px;cursor:pointer;" disabled>⏹ Detener</button>
+<span id="dStatus" style="font-size:11px;color:var(--text-tertiary);">Inactivo</span>
+</div>
+<div id="dPartial" style="font-size:12px;color:var(--text-tertiary);margin-top:6px;min-height:20px;"></div>
+<script>
+(function(){
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(!SR){document.getElementById('dStatus').textContent='No compatible';return;}
+const r=new SR();r.lang='es-ES';r.continuous=true;r.interimResults=true;
+let final='';
+r.onresult=function(e){
+  let interim='';
+  for(let i=e.resultIndex;i<e.results.length;i++){
+    if(e.results[i].isFinal) final+=e.results[i][0].transcript+' ';
+    else interim+=e.results[i][0].transcript;
+  }
+  document.getElementById('dPartial').innerHTML=final+'<em>'+interim+'</em>';
+};
+r.onend=function(){
+  document.getElementById('dStatus').textContent='Detenido';
+  document.getElementById('dStart').disabled=false;
+  document.getElementById('dStop').disabled=true;
+  if(final.trim()) Streamlit.setComponentValue({type:'dictation',text:final.trim()});
+};
+document.getElementById('dStart').onclick=function(){
+  final='';document.getElementById('dPartial').textContent='';r.start();
+  document.getElementById('dStatus').textContent='Escuchando...';this.disabled=true;
+  document.getElementById('dStop').disabled=false;
+};
+document.getElementById('dStop').onclick=function(){r.stop();document.getElementById('dStatus').textContent='Procesando...';};
+})();
+</script>"""
 
-Arquitectura lista para:
-- Draggable dividers (v6.6)
-- AI enhancements (v7)
-- Collaboration (v8)
+# ─── DICTATION HANDLER ───────────────────────────────────────────────
 
----
+def render_dictation():
+    dict_val = components.html(dictation_html, height=100)
+    if dict_val and isinstance(dict_val, dict) and dict_val.get("type") == "dictation":
+        txt = dict_val.get("text", "")
+        if txt:
+            cur = st.session_state.findings_input
+            st.session_state.findings_input = (cur + " " + txt).strip()
+            st.rerun()
 
-## FAQ Migración
+# ─── TEMPLATES AND COMMON UI HELPERS ─────────────────────────────────
 
-### P: ¿Pierdo mis datos?
-**R**: No. `session_state` se preserva entre reloads.
+def render_template_ui(key_suffix):
+    templates = kb.list_templates()
+    sel_idx = 0
+    if st.session_state.selected_template in templates:
+        sel_idx = templates.index(st.session_state.selected_template)
+    selected = st.selectbox(
+        "",
+        options=templates,
+        index=sel_idx,
+        key=f"tpl_{key_suffix}",
+        label_visibility="collapsed",
+    )
+    st.session_state.selected_template = selected
+    tc1, tc2 = st.columns(2)
+    with tc1:
+        if st.button("Cargar", key=f"load_{key_suffix}", use_container_width=True):
+            st.session_state.draft_report = kb.render_template(selected)
+            storage.save_draft(st.session_state.draft_report)
+            st.session_state.last_saved = f"Plantilla: {selected}"
+    with tc2:
+        if st.button("Insertar", key=f"ins_{key_suffix}", use_container_width=True):
+            tpl = kb.render_template(selected)
+            cur = st.session_state.draft_report
+            st.session_state.draft_report = f"{cur}\n\n{tpl}" if cur else tpl
+            storage.save_draft(st.session_state.draft_report)
+            st.session_state.last_saved = f"Insertada: {selected}"
 
-### P: ¿Puedo volver a v5?
-**R**: Sí. Tenías backup en `app_v5_backup.py`.
 
-### P: ¿Cómo cambio colores?
-**R**: Edita `TEMAS["Dark"]` o `TEMAS["Light"]`.
+def render_commands(key_suffix, cols_per_row=2):
+    cmds = kb.get_slash_commands()
+    cmd_items = list(cmds.items())
+    for i in range(0, len(cmd_items), cols_per_row):
+        cols = st.columns(cols_per_row)
+        for j in range(cols_per_row):
+            idx = i + j
+            if idx < len(cmd_items):
+                k, v = cmd_items[idx]
+                lbl = v.get("label", k) if isinstance(v, dict) else v
+                if ":" in lbl:
+                    lbl = lbl.split(":")[0]
+                with cols[j]:
+                    if st.button(lbl, key=f"cmd_{key_suffix}_{k}", use_container_width=True):
+                        tpl = v.get("template", v) if isinstance(v, dict) else v
+                        cur = st.session_state.draft_report
+                        st.session_state.draft_report = f"{cur}\n\n{tpl}" if cur else tpl
+                        storage.save_draft(st.session_state.draft_report)
 
-### P: ¿Dónde está el botón de "Definiciones"?
-**R**: Se removió. Será feature separada en v7.
 
-### P: ¿Por qué temperatura 0.15 en lugar de 0.1?
-**R**: Mejor balance entre precisión y naturalidad. Testing mostró mejor feedback de usuarios.
+# ─── MAIN LAYOUT ─────────────────────────────────────────────────────
 
-### P: ¿Cómo agrego más regiones?
-**R**: Edita `REGIONES = [...]` en la app.
+if st.session_state.layout_mode == "horizontal":
+    show = st.session_state.show_input
+    iw = st.session_state.input_width / 100 if show else 0.0
+    input_col, editor_col = st.columns([iw, 1.0 - iw])
 
-### P: ¿Puedo mantener v5 en producción mientras pruebo v6?
-**R**: Sí. Rename a `app_v5.py` y `v6.py` en diferentes branches.
+    with input_col:
+        if show:
+            st.markdown('<div class="section-header">Hallazgos</div>', unsafe_allow_html=True)
+            findings = st.text_area(
+                "",
+                value=st.session_state.findings_input,
+                placeholder="Escribe los hallazgos clínicos aquí...",
+                key="findings_h",
+                label_visibility="collapsed",
+            )
+            st.session_state.findings_input = findings
 
----
+            st.markdown('<div class="section-header">Dictado por voz</div>', unsafe_allow_html=True)
+            render_dictation()
 
-## Checklist Post-Migración
+            st.markdown('<div class="section-header">Plantilla</div>', unsafe_allow_html=True)
+            render_template_ui("h")
 
-- [ ] Testear con Chrome, Safari, Firefox
-- [ ] Testear en móvil (responsive)
-- [ ] Grabar audio, verificar transcripción
-- [ ] Generar informe, exportar a DOCX
-- [ ] Refinar conclusión
-- [ ] Cambiar tema Dark → Light
-- [ ] Editar texto en editor
-- [ ] Compartir feedback con equipo
+            st.markdown('<div class="section-header">Comandos</div>', unsafe_allow_html=True)
+            render_commands("h", cols_per_row=2)
 
----
+    with editor_col:
+        report = st.text_area(
+            "",
+            value=st.session_state.draft_report,
+            placeholder="Informe radiológico — edita directamente aquí",
+            key="editor_h",
+            label_visibility="collapsed",
+        )
+        if report != st.session_state.draft_report:
+            st.session_state.draft_report = report
+            storage.save_draft(report)
+            st.session_state.last_saved = "Autoguardado"
 
-## Próximos Pasos Recomendados
+else:
+    # ── VERTICAL MODE ────────────────────────────────────────────────
+    if st.session_state.show_input:
+        vc1, vc2, vc3 = st.columns([2, 1, 1])
+        with vc1:
+            st.markdown('<div class="section-header">Hallazgos</div>', unsafe_allow_html=True)
+            findings = st.text_area(
+                "",
+                value=st.session_state.findings_input,
+                placeholder="Escribe los hallazgos clínicos aquí...",
+                key="findings_v",
+                label_visibility="collapsed",
+            )
+            st.session_state.findings_input = findings
+        with vc2:
+            st.markdown('<div class="section-header">Dictado</div>', unsafe_allow_html=True)
+            render_dictation()
+        with vc3:
+            st.markdown('<div class="section-header">Plantilla</div>', unsafe_allow_html=True)
+            render_template_ui("v")
 
-### Inmediato (Esta semana)
-1. Deploy v6 a staging
-2. Test con radiológos
-3. Recolectar feedback
+        st.markdown('<div class="section-header">Comandos</div>', unsafe_allow_html=True)
+        render_commands("v", cols_per_row=4)
 
-### Corto plazo (1-2 semanas)
-1. Agregar draggable divider (v6.6)
-2. Implementar auto-save
-3. Dark/Light theme toggle perfecto
-
-### Mediano plazo (1 mes)
-1. Historial de informes (SQLite)
-2. Clasificaciones mejoradas (v7)
-3. Analytics básico
-
-### Largo plazo (2-3 meses)
-1. Collaboration features
-2. API pública
-3. Mobile app nativa
-
----
-
-## Conclusión
-
-v6 no es un parche; es una **reimaginación**.
-
-Pasaste de:
-```
-"Aplicación radiológica compleja con muchas opciones"
-```
-
-a:
-
-```
-"Editor de IA minimalista enfocado en radiología"
-```
-
-Esto es **ventajoso** porque:
-1. Menos configuración = flujo más rápido
-2. Menos opciones = mejor UX
-3. Menos código = menos bugs
-4. Más moderno = percepción premium
-
----
-
-**¿Preguntas?** Consulta ARQUITECTURA_BEAM_AI_V6.md para detalles técnicos.
+    report = st.text_area(
+        "",
+        value=st.session_state.draft_report,
+        placeholder="Informe radiológico — edita directamente aquí",
+        key="editor_v",
+        label_visibility="collapsed",
+    )
+    if report != st.session_state.draft_report:
+        st.session_state.draft_report = report
+        storage.save_draft(report)
+        st.session_state.last_saved = "Autoguardado"
