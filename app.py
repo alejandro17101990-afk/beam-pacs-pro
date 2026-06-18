@@ -1,6 +1,6 @@
 """
-AURA — Radiology Copilot
-UI inspired by Quillr: dark theme, left dictation panel, rich central editor, collapsible right AI panel.
+AURA v2 — Radiology Copilot
+Remasterized: 3-column layout, clean dark theme, inline rich editor with bg switcher.
 """
 
 import streamlit as st
@@ -74,18 +74,18 @@ KB_CLASIF = {
 }
 
 KB_REGIONES = {
-    "Rodilla": {"clasif":["Menisco · Stoller","Cartílago · ICRS","Artrosis · Kellgren-Lawrence","LCA · Hope & Feagin"],"omisiones":["menisco medial","menisco lateral","LCA","cartílago"]},
-    "Columna lumbar": {"clasif":["Disco · Pfirrmann","Modic"],"omisiones":["discos","canal espinal","foramina"]},
+    "Rodilla":          {"clasif":["Menisco · Stoller","Cartílago · ICRS","Artrosis · Kellgren-Lawrence","LCA · Hope & Feagin"],"omisiones":["menisco medial","menisco lateral","LCA","cartílago"]},
+    "Columna lumbar":   {"clasif":["Disco · Pfirrmann","Modic"],"omisiones":["discos","canal espinal","foramina"]},
     "Columna cervical": {"clasif":["Disco · Pfirrmann","Modic"],"omisiones":["discos","médula","canal"]},
-    "Hombro": {"clasif":["Cartílago · ICRS"],"omisiones":["supraespinoso","infraespinoso","bursa","labrum"]},
-    "Cadera": {"clasif":["Cartílago · ICRS","Artrosis · Kellgren-Lawrence"],"omisiones":["labrum","cartílago","espacio articular"]},
-    "Tobillo / Pie": {"clasif":["Cartílago · ICRS"],"omisiones":["Aquiles","ligamentos laterales","cartílago talar"]},
-    "Cerebro": {"clasif":[],"omisiones":["parénquima","ventrículos","línea media","sustancia blanca"]},
-    "Tórax": {"clasif":["Fleischner 2017"],"omisiones":["parénquima","pleuras","mediastino"]},
+    "Hombro":           {"clasif":["Cartílago · ICRS"],"omisiones":["supraespinoso","infraespinoso","bursa","labrum"]},
+    "Cadera":           {"clasif":["Cartílago · ICRS","Artrosis · Kellgren-Lawrence"],"omisiones":["labrum","cartílago","espacio articular"]},
+    "Tobillo / Pie":    {"clasif":["Cartílago · ICRS"],"omisiones":["Aquiles","ligamentos laterales","cartílago talar"]},
+    "Cerebro":          {"clasif":[],"omisiones":["parénquima","ventrículos","línea media","sustancia blanca"]},
+    "Tórax":            {"clasif":["Fleischner 2017"],"omisiones":["parénquima","pleuras","mediastino"]},
     "Abdomen / Pelvis": {"clasif":["LI-RADS"],"omisiones":["hígado","riñones","páncreas","aorta"]},
-    "Mama": {"clasif":["ACR BI-RADS"],"omisiones":["composición","BI-RADS","ganglios axilares"]},
-    "Tiroides": {"clasif":["ACR TIRADS"],"omisiones":["TIRADS","adenopatías"]},
-    "Muñeca / Mano": {"clasif":["Cartílago · ICRS"],"omisiones":["TFCC","tendones"]},
+    "Mama":             {"clasif":["ACR BI-RADS"],"omisiones":["composición","BI-RADS","ganglios axilares"]},
+    "Tiroides":         {"clasif":["ACR TIRADS"],"omisiones":["TIRADS","adenopatías"]},
+    "Muñeca / Mano":    {"clasif":["Cartílago · ICRS"],"omisiones":["TFCC","tendones"]},
 }
 
 MODALIDADES = ["Resonancia Magnética","Tomografía Computarizada","Radiografía","Ultrasonido","PET-CT","Intervencionismo"]
@@ -104,8 +104,7 @@ _D = {
     "estudio_id":f"EST-{datetime.datetime.now().strftime('%Y%m%d-%H%M')}",
     "plantilla_txt":"","qa":{},"right_open":True,
     "ai_toggle":True,
-    "editor_content": "",
-    "titulo_estudio":"TC ABDOMEN Y PELVIS CON CONTRASTE",
+    "editor_bg": "dark",
 }
 for k,v in _D.items():
     if k not in st.session_state:
@@ -119,16 +118,17 @@ def get_client():
     try:
         if not key: key = st.secrets.get("deepseek_key","") or st.secrets.get("openai_key","")
     except: pass
-    if not key: return None,None
+    if not key: return None, None
     p = st.session_state.proveedor
-    if p=="openai_mini": return OpenAI(api_key=key),"gpt-4o-mini"
-    if p=="openai_4":    return OpenAI(api_key=key),"gpt-4.1-mini"
-    return OpenAI(api_key=key, base_url="https://api.deepseek.com"),"deepseek-chat"
+    if p == "openai_mini": return OpenAI(api_key=key), "gpt-4o-mini"
+    if p == "openai_4":    return OpenAI(api_key=key), "gpt-4.1-mini"
+    return OpenAI(api_key=key, base_url="https://api.deepseek.com"), "deepseek-chat"
 
 def transcribir(audio):
     r = sr.Recognizer()
     try:
-        with sr.AudioFile(audio) as s: return r.recognize_google(r.record(s), language="es-MX")
+        with sr.AudioFile(audio) as s:
+            return r.recognize_google(r.record(s), language="es-MX")
     except: return ""
 
 def leer_plantilla(f):
@@ -136,41 +136,46 @@ def leer_plantilla(f):
     return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
 
 def texto_a_html(txt):
-    lines=[]
+    lines = []
     for line in txt.split("\n"):
-        s=line.strip()
+        s = line.strip()
         if not s: lines.append("<br>")
-        elif s.isupper() and len(s)<80 and not s.startswith("•"):
+        elif s.isupper() and len(s) < 80 and not s.startswith("•"):
             lines.append(f'<h3 class="sec">{s}</h3>')
         elif s.startswith("•") or s.startswith("-"):
             lines.append(f"<li>{s[1:].strip()}</li>")
-        else: lines.append(f"<p>{s}</p>")
+        else:
+            lines.append(f"<p>{s}</p>")
     return "\n".join(lines)
 
 def calcular_qa(texto, region):
-    up=texto.upper()
-    secs={s:s in up for s in ["TÉCNICA","HALLAZGOS","IMPRESIÓN"]}
-    words=len(texto.split())
-    omis=[e for e in KB_REGIONES.get(region,{}).get("omisiones",[]) if e.lower() not in texto.lower()]
-    found=sum(secs.values())
-    score=min(100,int((found/3)*40+min(words/200,1)*35+(found==3)*25))
+    up    = texto.upper()
+    secs  = {s: s in up for s in ["TÉCNICA","HALLAZGOS","IMPRESIÓN"]}
+    words = len(texto.split())
+    omis  = [e for e in KB_REGIONES.get(region,{}).get("omisiones",[]) if e.lower() not in texto.lower()]
+    found = sum(secs.values())
+    score = min(100, int((found/3)*40 + min(words/200,1)*35 + (found==3)*25))
     return {"score":score,"secciones":secs,"omisiones":omis}
 
 def build_system_prompt():
-    r=st.session_state.region; m=st.session_state.modalidad
-    clasif_info=""
+    r = st.session_state.region
+    m = st.session_state.modalidad
+    clasif_info = ""
     for c in KB_REGIONES.get(r,{}).get("clasif",[]):
-        d=KB_CLASIF.get(c,{})
-        clasif_info+=f"\n{c}: {d.get('desc','')}\n"
-        for g,desc in d.get("grados",{}).items(): clasif_info+=f"  Gr.{g}: {desc}\n"
-    clasif_activas=""
+        d = KB_CLASIF.get(c,{})
+        clasif_info += f"\n{c}: {d.get('desc','')}\n"
+        for g, desc in d.get("grados",{}).items():
+            clasif_info += f"  Gr.{g}: {desc}\n"
+    clasif_activas = ""
     if st.session_state.clasif_activas:
-        clasif_activas="\nCLASIFICACIONES DEL CASO:\n"
-        for k,v in st.session_state.clasif_activas.items(): clasif_activas+=f"• {k}: Grado {v}\n"
-    estilo=""
+        clasif_activas = "\nCLASIFICACIONES DEL CASO:\n"
+        for k, v in st.session_state.clasif_activas.items():
+            clasif_activas += f"• {k}: Grado {v}\n"
+    estilo = ""
     if st.session_state.estilo_ejemplos:
-        estilo="\nESTILO DEL RADIÓLOGO:\n"+"".join(f"Ejemplo:\n{e[:500]}\n" for e in st.session_state.estilo_ejemplos[-3:])
-    if st.session_state.estilo_pref: estilo+=f"\nPreferencias: {st.session_state.estilo_pref}"
+        estilo = "\nESTILO DEL RADIÓLOGO:\n" + "".join(f"Ejemplo:\n{e[:500]}\n" for e in st.session_state.estilo_ejemplos[-3:])
+    if st.session_state.estilo_pref:
+        estilo += f"\nPreferencias: {st.session_state.estilo_pref}"
     return f"""Eres AURA, copiloto de redacción radiológica de nivel experto.
 MODALIDAD: {m} | REGIÓN: {r}
 CLASIFICACIONES:{clasif_info}{clasif_activas}{estilo}
@@ -182,34 +187,39 @@ def generar_docx(html_txt, plain_txt):
     from html.parser import HTMLParser
     class P(HTMLParser):
         def __init__(self):
-            super().__init__(); self.doc=Document()
-            st2=self.doc.styles["Normal"]; st2.font.name="Arial"; st2.font.size=Pt(11)
-            self.bold=self.italic=self.ul=False; self.para=None
-        def handle_starttag(self,tag,attrs):
-            if tag in("b","strong"): self.bold=True
-            elif tag in("i","em"): self.italic=True
-            elif tag=="u": self.ul=True
-            elif tag in("p","div","h3"): self.para=self.doc.add_paragraph()
-            elif tag=="li": self.para=self.doc.add_paragraph(style="List Bullet")
-            elif tag=="br":
-                if not self.para: self.para=self.doc.add_paragraph()
-        def handle_endtag(self,tag):
-            if tag in("b","strong"): self.bold=False
-            elif tag in("i","em"): self.italic=False
-            elif tag=="u": self.ul=False
-        def handle_data(self,data):
-            t=data.strip()
+            super().__init__()
+            self.doc = Document()
+            st2 = self.doc.styles["Normal"]
+            st2.font.name = "Arial"
+            st2.font.size = Pt(11)
+            self.bold = self.italic = self.ul = False
+            self.para = None
+        def handle_starttag(self, tag, attrs):
+            if tag in ("b","strong"):   self.bold   = True
+            elif tag in ("i","em"):     self.italic = True
+            elif tag == "u":            self.ul     = True
+            elif tag in ("p","div","h3"): self.para = self.doc.add_paragraph()
+            elif tag == "li":           self.para   = self.doc.add_paragraph(style="List Bullet")
+            elif tag == "br":
+                if not self.para: self.para = self.doc.add_paragraph()
+        def handle_endtag(self, tag):
+            if tag in ("b","strong"):   self.bold   = False
+            elif tag in ("i","em"):     self.italic = False
+            elif tag == "u":            self.ul     = False
+        def handle_data(self, data):
+            t = data.strip()
             if not t: return
-            if not self.para: self.para=self.doc.add_paragraph()
-            run=self.para.add_run(t+" ")
-            run.bold=self.bold; run.italic=self.italic; run.underline=self.ul
-    p=P()
-    try: p.feed((html_txt or plain_txt).replace("\n"," "))
+            if not self.para: self.para = self.doc.add_paragraph()
+            run = self.para.add_run(t + " ")
+            run.bold = self.bold; run.italic = self.italic; run.underline = self.ul
+    p = P()
+    try:
+        p.feed((html_txt or plain_txt).replace("\n"," "))
     except:
-        d=Document()
+        d = Document()
         for line in re.sub(r"<[^>]+>","",plain_txt).split("\n"): d.add_paragraph(line)
-        bio=io.BytesIO(); d.save(bio); return bio.getvalue()
-    bio=io.BytesIO(); p.doc.save(bio); return bio.getvalue()
+        bio = io.BytesIO(); d.save(bio); return bio.getvalue()
+    bio = io.BytesIO(); p.doc.save(bio); return bio.getvalue()
 
 # ══════════════════════════════════════════════════════════════════
 # DEFAULT EDITOR CONTENT
@@ -219,12 +229,9 @@ DEFAULT_CONTENT = """<h3 class="sec">HALLAZGOS</h3>
 <p><strong>Vesícula biliar:</strong> De paredes delgadas, sin litiasis radiopacas.</p>
 <p><strong>Páncreas:</strong> De aspecto normal, sin lesiones focales ni dilatación del conducto pancreático.</p>
 <p><strong>Bazo:</strong> De tamaño normal, con atenuación homogénea, sin lesiones focales.</p>
-<p><strong>Glándulas suprarrenales:</strong> De aspecto normal.</p>
 <p><strong>Riñones:</strong> De tamaño y morfología conservada, con adecuada captación y eliminación del contraste. No se observan litiasis ni hidronefrosis.</p>
-<p><strong>Estómago:</strong> Moderadamente distendido con contenido líquido. Asas intestinales permeables, sin dilatación ni engrosamiento parietal. Apéndice cecal de aspecto normal.</p>
-<p><strong>Útero y anexos:</strong> De aspecto normal para la edad.</p>
+<p><strong>Estómago e intestino:</strong> Asas intestinales permeables, sin dilatación ni engrosamiento parietal.</p>
 <p>No se identifica líquido libre intraabdominal ni colecciones.</p>
-<p><strong>Pared abdominal:</strong> Sin defectos. No se identifican lesiones óseas destructivas.</p>
 <h3 class="sec">CONCLUSIÓN</h3>
 <li>Estudio sin hallazgos tomográficos sugestivos de patología abdominal o pélvica aguda.</li>
 <li>Hallazgos descritos.</li>"""
@@ -236,12 +243,11 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
-/* ── RESET ── */
 *, *::before, *::after { box-sizing: border-box; }
 html, body, .stApp {
-    background: #1C1C1E !important;
+    background: #111112 !important;
     font-family: 'Inter', sans-serif !important;
-    color: #E5E5EA !important;
+    color: #E2E2E7 !important;
     margin: 0; padding: 0;
 }
 .block-container { padding: 0 !important; max-width: 100% !important; }
@@ -251,419 +257,184 @@ section[data-testid="stSidebar"] { display: none !important; }
 [data-testid="stHorizontalBlock"] { gap: 0 !important; align-items: stretch !important; }
 [data-testid="column"] { padding: 0 !important; }
 
-/* ── STREAMLIT WIDGETS DARK ── */
+/* widgets */
 .stTextArea textarea {
-    background: #2C2C2E !important;
-    border: 1px solid #3A3A3C !important;
-    border-radius: 8px !important;
-    color: #E5E5EA !important;
-    font-family: 'Inter', sans-serif !important;
-    font-size: 13px !important;
-    line-height: 1.65 !important;
-    resize: none !important;
+    background: #1E1E20 !important; border: 1px solid #2E2E32 !important;
+    border-radius: 8px !important; color: #E2E2E7 !important;
+    font-family: 'Inter', sans-serif !important; font-size: 13px !important;
+    line-height: 1.65 !important; resize: none !important;
 }
-.stTextArea textarea:focus {
-    border-color: #F5C518 !important;
-    box-shadow: 0 0 0 3px rgba(245,197,24,.1) !important;
-}
+.stTextArea textarea:focus { border-color: #E8B84B !important; box-shadow: 0 0 0 3px rgba(232,184,75,.1) !important; }
 [data-testid="stSelectbox"] > div > div {
-    background: #2C2C2E !important;
-    border: 1px solid #3A3A3C !important;
-    border-radius: 8px !important;
-    color: #E5E5EA !important;
-    font-size: 12px !important;
+    background: #1E1E20 !important; border: 1px solid #2E2E32 !important;
+    border-radius: 8px !important; color: #E2E2E7 !important; font-size: 12px !important;
 }
 [data-testid="stTextInput"] input {
-    background: #2C2C2E !important;
-    border: 1px solid #3A3A3C !important;
-    border-radius: 8px !important;
-    color: #E5E5EA !important;
-    font-size: 12px !important;
+    background: #1E1E20 !important; border: 1px solid #2E2E32 !important;
+    border-radius: 8px !important; color: #E2E2E7 !important; font-size: 12px !important;
 }
-[data-testid="stAudioInput"] {
-    background: #2C2C2E !important;
-    border: 1px solid #3A3A3C !important;
-    border-radius: 10px !important;
-}
-[data-testid="stFileUploader"] {
-    background: #2C2C2E !important;
-    border: 1px dashed #3A3A3C !important;
-    border-radius: 8px !important;
-}
-[data-testid="stFileUploader"] * { color: #636366 !important; font-size: 11px !important; }
+[data-testid="stAudioInput"] { background: #1E1E20 !important; border: 1px solid #2E2E32 !important; border-radius: 10px !important; }
+[data-testid="stFileUploader"] { background: #1E1E20 !important; border: 1px dashed #2E2E32 !important; border-radius: 8px !important; }
+[data-testid="stFileUploader"] * { color: #505055 !important; font-size: 11px !important; }
 [data-testid="stRadio"] > div { gap: 4px !important; }
 [data-testid="stRadio"] label {
-    background: #2C2C2E !important;
-    border: 1px solid #3A3A3C !important;
-    border-radius: 6px !important;
-    padding: 4px 10px !important;
-    font-size: 11px !important;
-    color: #8E8E93 !important;
+    background: #1E1E20 !important; border: 1px solid #2E2E32 !important;
+    border-radius: 6px !important; padding: 4px 10px !important;
+    font-size: 11px !important; color: #6E6E78 !important;
 }
 [data-testid="stRadio"] label:has(input:checked) {
-    border-color: #F5C518 !important;
-    color: #F5C518 !important;
-    background: rgba(245,197,24,.08) !important;
+    border-color: #E8B84B !important; color: #E8B84B !important;
+    background: rgba(232,184,75,.08) !important;
 }
 
-/* ── BUTTONS ── */
+/* buttons */
 .stButton > button {
-    background: #2C2C2E !important;
-    border: 1px solid #3A3A3C !important;
-    color: #AEAEB2 !important;
-    font-family: 'Inter', sans-serif !important;
-    font-size: 12px !important;
-    font-weight: 500 !important;
-    border-radius: 8px !important;
-    padding: 6px 14px !important;
-    transition: all .15s !important;
-    white-space: nowrap !important;
+    background: #1E1E20 !important; border: 1px solid #2E2E32 !important;
+    color: #9E9EA8 !important; font-family: 'Inter', sans-serif !important;
+    font-size: 12px !important; font-weight: 500 !important;
+    border-radius: 8px !important; padding: 6px 14px !important;
+    transition: all .15s !important; white-space: nowrap !important;
 }
-.stButton > button:hover {
-    background: #3A3A3C !important;
-    color: #E5E5EA !important;
-    border-color: #48484A !important;
-}
-.btn-yellow .stButton > button {
-    background: #F5C518 !important;
-    border: none !important;
-    color: #1C1C1E !important;
-    font-weight: 700 !important;
-    font-size: 14px !important;
-    border-radius: 10px !important;
-    padding: 14px !important;
-    letter-spacing: .02em !important;
-}
-.btn-yellow .stButton > button:hover {
-    background: #FFD700 !important;
-    box-shadow: 0 4px 16px rgba(245,197,24,.35) !important;
-}
-.btn-update .stButton > button {
-    background: #3A3A3C !important;
-    border: none !important;
-    color: #E5E5EA !important;
-    font-weight: 600 !important;
-    font-size: 13px !important;
-    border-radius: 10px !important;
-    padding: 12px !important;
-}
-.btn-update .stButton > button:hover {
-    background: #48484A !important;
-}
-.btn-primary .stButton > button {
-    background: #F5C518 !important;
-    border: none !important;
-    color: #1C1C1E !important;
-    font-weight: 700 !important;
-    border-radius: 8px !important;
-}
-.btn-primary .stButton > button:hover {
-    background: #FFD700 !important;
-    box-shadow: 0 4px 12px rgba(245,197,24,.3) !important;
-}
-.btn-ghost .stButton > button {
-    background: transparent !important;
-    border: 1px solid transparent !important;
-    color: #636366 !important;
-    padding: 4px 8px !important;
-}
-.btn-ghost .stButton > button:hover {
-    background: #2C2C2E !important;
-    color: #AEAEB2 !important;
-}
-[data-testid="stDownloadButton"] > button {
-    background: #2C2C2E !important;
-    border: 1px solid #3A3A3C !important;
-    color: #AEAEB2 !important;
-    font-size: 12px !important;
-    border-radius: 8px !important;
-}
-[data-testid="stDownloadButton"] > button:hover {
-    border-color: #F5C518 !important;
-    color: #F5C518 !important;
-}
+.stButton > button:hover { background: #2A2A2E !important; color: #E2E2E7 !important; border-color: #3E3E44 !important; }
 
-/* ── EXPANDER ── */
-[data-testid="stExpander"] {
-    background: transparent !important;
-    border: none !important;
-    border-bottom: 1px solid #2C2C2E !important;
-    border-radius: 0 !important;
-    margin: 0 !important;
+.btn-accent .stButton > button {
+    background: #E8B84B !important; border: none !important;
+    color: #111112 !important; font-weight: 700 !important;
+    font-size: 13px !important; border-radius: 10px !important; padding: 12px !important;
+    letter-spacing: .01em !important;
 }
-[data-testid="stExpander"] summary {
-    color: #636366 !important;
-    font-size: 10px !important;
-    font-weight: 700 !important;
-    letter-spacing: .06em !important;
-    text-transform: uppercase !important;
-    padding: 10px 0 !important;
+.btn-accent .stButton > button:hover { background: #F5C862 !important; box-shadow: 0 4px 16px rgba(232,184,75,.3) !important; }
+
+.btn-solid .stButton > button {
+    background: #2A2A2E !important; border: none !important;
+    color: #E2E2E7 !important; font-weight: 600 !important;
+    font-size: 12px !important; border-radius: 10px !important; padding: 10px !important;
 }
-[data-testid="stExpander"] summary:hover { color: #AEAEB2 !important; }
+.btn-solid .stButton > button:hover { background: #363639 !important; }
+
+.btn-primary .stButton > button {
+    background: #E8B84B !important; border: none !important;
+    color: #111112 !important; font-weight: 700 !important; border-radius: 8px !important;
+}
+.btn-primary .stButton > button:hover { background: #F5C862 !important; }
+
+.btn-ghost .stButton > button {
+    background: transparent !important; border: 1px solid transparent !important;
+    color: #505055 !important; padding: 4px 8px !important;
+}
+.btn-ghost .stButton > button:hover { background: #1E1E20 !important; color: #9E9EA8 !important; }
+
+[data-testid="stDownloadButton"] > button {
+    background: #1E1E20 !important; border: 1px solid #2E2E32 !important;
+    color: #9E9EA8 !important; font-size: 12px !important; border-radius: 8px !important;
+}
+[data-testid="stDownloadButton"] > button:hover { border-color: #E8B84B !important; color: #E8B84B !important; }
+
+/* expander */
+[data-testid="stExpander"] { background: transparent !important; border: none !important; border-bottom: 1px solid #1E1E20 !important; border-radius: 0 !important; margin: 0 !important; }
+[data-testid="stExpander"] summary { color: #505055 !important; font-size: 10px !important; font-weight: 700 !important; letter-spacing: .07em !important; text-transform: uppercase !important; padding: 10px 0 !important; }
+[data-testid="stExpander"] summary:hover { color: #9E9EA8 !important; }
 [data-testid="stExpander"] > div > div { padding: 4px 0 10px !important; }
 
-/* ── SCROLLBAR ── */
-::-webkit-scrollbar { width: 4px; height: 4px; }
+/* scrollbar */
+::-webkit-scrollbar { width: 3px; height: 3px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #3A3A3C; border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: #48484A; }
+::-webkit-scrollbar-thumb { background: #2E2E32; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #3E3E44; }
 
-/* ── DIVIDER ── */
-hr { border-color: #2C2C2E !important; margin: 8px 0 !important; }
+hr { border-color: #1E1E20 !important; margin: 6px 0 !important; }
 
-/* ── LABEL ── */
-.lbl {
-    font-size: 10px; font-weight: 700; color: #636366;
-    text-transform: uppercase; letter-spacing: .06em;
-    display: block; margin-bottom: 4px; margin-top: 12px;
-}
+.lbl { font-size: 10px; font-weight: 700; color: #505055; text-transform: uppercase; letter-spacing: .07em; display: block; margin-bottom: 4px; margin-top: 10px; }
 
-/* ── LEFT PANEL ── */
-.left-panel {
-    background: #141414;
-    border-right: 1px solid #2C2C2E;
-    height: 100vh;
-    display: flex; flex-direction: column;
-    overflow: hidden;
-}
-.lp-header {
-    padding: 14px 14px 10px;
-    border-bottom: 1px solid #2C2C2E;
-    display: flex; align-items: center; gap: 10px;
-}
-.lp-logo {
-    display: flex; align-items: center; gap: 8px;
-}
-.logo-leaf {
-    font-size: 18px; line-height: 1;
-}
-.logo-text {
-    font-size: 16px; font-weight: 700; color: #E5E5EA;
-    letter-spacing: -.01em;
-}
-.lp-section {
-    font-size: 10px; font-weight: 700; color: #48484A;
-    letter-spacing: .1em; text-transform: uppercase;
-    padding: 14px 14px 6px;
-}
-.lp-body { flex: 1; overflow-y: auto; padding: 0; }
-.lp-footer {
-    padding: 10px 14px 14px;
-    border-top: 1px solid #2C2C2E;
-}
-.hist-item {
-    padding: 8px 14px; cursor: pointer;
-    transition: background .12s;
-    border-left: 2px solid transparent;
-}
-.hist-item:hover { background: #1C1C1E; border-left-color: #F5C518; }
-.hist-item.active { background: #1C1C1E; border-left-color: #F5C518; }
-.hi-title { font-size: 12px; font-weight: 600; color: #C7C7CC; line-height: 1.3; }
-.hi-meta { font-size: 10px; color: #48484A; margin-top: 1px; font-family: 'JetBrains Mono', monospace; }
-.hi-badge {
-    display: inline-block; padding: 1px 5px; border-radius: 3px;
-    font-size: 9px; font-weight: 700; margin-top: 3px;
-}
-.badge-active { background: rgba(245,197,24,.12); color: #F5C518; }
+/* LEFT PANEL */
+.lp { background: #0D0D0F; border-right: 1px solid #1E1E20; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+.lp-head { padding: 16px 14px 12px; border-bottom: 1px solid #1E1E20; display: flex; align-items: center; justify-content: space-between; }
+.lp-logo { display: flex; align-items: center; gap: 9px; }
+.logo-mark { width: 28px; height: 28px; background: #E8B84B; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; color: #111112; letter-spacing: -.02em; }
+.logo-name { font-size: 15px; font-weight: 700; color: #E2E2E7; letter-spacing: -.02em; }
+.logo-sub { font-size: 10px; color: #505055; font-weight: 500; margin-top: 1px; }
+.lp-section { font-size: 9px; font-weight: 700; color: #3E3E44; letter-spacing: .1em; text-transform: uppercase; padding: 14px 14px 5px; }
+.lp-body { flex: 1; overflow-y: auto; }
+.lp-foot { padding: 10px 14px 14px; border-top: 1px solid #1E1E20; }
+.hist-item { padding: 8px 14px; cursor: pointer; transition: background .1s; border-left: 2px solid transparent; }
+.hist-item:hover { background: #141416; border-left-color: #E8B84B; }
+.hi-title { font-size: 12px; font-weight: 600; color: #AEAEB8; line-height: 1.3; }
+.hi-meta { font-size: 10px; color: #3E3E44; margin-top: 1px; font-family: 'JetBrains Mono', monospace; }
+.hi-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 9px; font-weight: 700; margin-top: 3px; }
 .badge-ok { background: rgba(52,199,89,.1); color: #34C759; }
+.badge-warn { background: rgba(232,184,75,.12); color: #E8B84B; }
 
-/* ── TOPBAR ── */
-.aura-topbar {
-    background: #1C1C1E;
-    border-bottom: 1px solid #2C2C2E;
-    height: 50px;
-    padding: 0 18px;
-    display: flex; align-items: center; gap: 10px;
-    position: sticky; top: 0; z-index: 200;
-}
-.tb-study-select {
-    background: #2C2C2E;
-    border: 1px solid #3A3A3C;
-    border-radius: 8px;
-    color: #E5E5EA;
-    font-size: 12px; font-weight: 500;
-    padding: 6px 32px 6px 12px;
-    outline: none; cursor: pointer;
-    font-family: 'Inter', sans-serif;
-    appearance: none;
-    min-width: 160px;
-}
-.tb-template-btn {
-    background: #2C2C2E; border: 1px solid #3A3A3C;
-    color: #AEAEB2; font-size: 12px; font-weight: 500;
-    padding: 6px 14px; border-radius: 8px; cursor: pointer;
-    font-family: 'Inter', sans-serif; white-space: nowrap;
-    transition: all .12s;
-}
-.tb-template-btn:hover { background: #3A3A3C; color: #E5E5EA; }
-.tb-btn-icon {
-    background: #2C2C2E; border: 1px solid #3A3A3C;
-    color: #AEAEB2; font-size: 12px; font-weight: 500;
-    padding: 6px 12px; border-radius: 8px; cursor: pointer;
-    font-family: 'Inter', sans-serif; display: flex; align-items: center; gap: 6px;
-    transition: all .12s; white-space: nowrap;
-}
-.tb-btn-icon:hover { background: #3A3A3C; color: #E5E5EA; }
-.tb-new-btn {
-    background: #2C2C2E; border: 1px solid #3A3A3C;
-    color: #AEAEB2; font-size: 12px; font-weight: 600;
-    padding: 6px 14px; border-radius: 8px; cursor: pointer;
-    font-family: 'Inter', sans-serif; display: flex; align-items: center; gap: 6px;
-    transition: all .12s; white-space: nowrap;
-}
-.tb-new-btn:hover { background: #3A3A3C; color: #E5E5EA; }
-.tb-reports-btn {
-    background: #2C2C2E; border: 1px solid #3A3A3C;
-    color: #AEAEB2; font-size: 12px; font-weight: 600;
-    padding: 6px 14px; border-radius: 8px; cursor: pointer;
-    display: flex; align-items: center; gap: 6px;
-    font-family: 'Inter', sans-serif; transition: all .12s;
-}
-.tb-reports-btn:hover { background: #3A3A3C; color: #E5E5EA; }
-.tb-user {
-    background: #2C2C2E; border: 1px solid #3A3A3C;
-    color: #C7C7CC; font-size: 12px; font-weight: 500;
-    padding: 6px 12px; border-radius: 8px;
-    display: flex; align-items: center; gap: 6px;
-    font-family: 'Inter', sans-serif; white-space: nowrap;
-}
-.tb-user-dot {
-    width: 22px; height: 22px; border-radius: 50%;
-    background: linear-gradient(135deg,#F5C518,#FF9500);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 10px; font-weight: 700; color: #1C1C1E;
-}
-.tb-sep { width: 1px; height: 20px; background: #3A3A3C; flex-shrink: 0; }
+/* CENTER TOPBAR */
+.topbar { background: #111112; border-bottom: 1px solid #1E1E20; height: 48px; padding: 0 16px; display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 200; }
+.tb-chip { background: #1E1E20; border: 1px solid #2E2E32; border-radius: 7px; color: #9E9EA8; font-size: 11px; font-weight: 500; padding: 5px 12px; display: flex; align-items: center; gap: 6px; cursor: pointer; transition: all .12s; white-space: nowrap; font-family: 'Inter', sans-serif; }
+.tb-chip:hover { background: #2A2A2E; color: #E2E2E7; }
+.tb-sep { width: 1px; height: 18px; background: #1E1E20; flex-shrink: 0; }
+.tb-user { background: #1E1E20; border: 1px solid #2E2E32; border-radius: 7px; color: #AEAEB8; font-size: 11px; font-weight: 500; padding: 5px 10px; display: flex; align-items: center; gap: 7px; font-family: 'Inter', sans-serif; }
+.tb-avatar { width: 20px; height: 20px; border-radius: 50%; background: linear-gradient(135deg,#E8B84B,#F5A623); display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 800; color: #111112; }
+.tb-title { font-size: 12px; font-weight: 600; color: #6E6E78; font-family: 'JetBrains Mono', monospace; }
 
-/* ── RIGHT PANEL TAB TRIGGER ── */
-.rp-trigger {
-    position: fixed; right: 0; top: 50%;
-    transform: translateY(-50%);
-    background: #F5C518; color: #1C1C1E;
-    width: 22px; padding: 12px 0;
-    border-radius: 8px 0 0 8px;
-    display: flex; align-items: center; justify-content: center;
-    cursor: pointer; z-index: 500;
-    font-size: 11px; font-weight: 700;
-    box-shadow: -4px 0 12px rgba(0,0,0,.4);
-    writing-mode: vertical-rl;
-    letter-spacing: .1em;
-}
+/* RIGHT PANEL */
+.rp { background: #0D0D0F; border-left: 1px solid #1E1E20; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+.rp-head { padding: 14px 14px 10px; border-bottom: 1px solid #1E1E20; display: flex; align-items: center; justify-content: space-between; }
+.rp-title { font-size: 12px; font-weight: 700; color: #E2E2E7; letter-spacing: -.01em; }
+.rp-body { flex: 1; overflow-y: auto; padding: 12px; }
 
-/* ── COPILOT RESULT ── */
-.copilot-box {
-    background: #1C1C1E; border: 1px solid #2C2C2E;
-    border-radius: 10px; padding: 14px; margin-bottom: 10px;
-}
-.copilot-box-title {
-    font-size: 10px; font-weight: 700; color: #F5C518;
-    text-transform: uppercase; letter-spacing: .08em;
-    margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
-}
-.copilot-box-title::before {
-    content: ''; width: 6px; height: 6px; border-radius: 50%;
-    background: #F5C518; display: inline-block; flex-shrink: 0;
-}
-.copilot-text {
-    font-size: 11px; color: #AEAEB2; line-height: 1.75;
-    white-space: pre-wrap; font-family: 'Inter', sans-serif;
-}
-
-/* ── QA SCORE ── */
-.qa-box {
-    background: #1C1C1E; border: 1px solid #2C2C2E;
-    border-radius: 10px; padding: 12px 14px; margin-bottom: 10px;
-}
-.qa-score-num { font-size: 32px; font-weight: 700; line-height: 1; }
-.qa-lbl { font-size: 9px; font-weight: 700; color: #48484A; text-transform: uppercase; letter-spacing: .1em; margin-top: 2px; }
-.qa-track { height: 3px; background: #2C2C2E; border-radius: 2px; margin-top: 6px; overflow: hidden; }
+/* QA */
+.qa-wrap { background: #141416; border: 1px solid #1E1E20; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+.qa-num { font-size: 30px; font-weight: 700; line-height: 1; }
+.qa-lbl { font-size: 9px; font-weight: 700; color: #3E3E44; text-transform: uppercase; letter-spacing: .09em; margin-top: 2px; }
+.qa-track { height: 3px; background: #1E1E20; border-radius: 2px; margin-top: 8px; overflow: hidden; }
 .qa-fill { height: 100%; border-radius: 2px; transition: width .5s; }
-.sec-row { display:flex;align-items:center;gap:6px;margin-bottom:3px; }
-.sec-ok { color:#34C759;font-size:12px; }
-.sec-no { color:#FF453A;font-size:12px; }
-.sec-name { font-size:11px;color:#8E8E93;font-weight:500; }
+.sec-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+.sec-ok { color: #34C759; font-size: 11px; }
+.sec-no { color: #FF453A; font-size: 11px; }
+.sec-nm { font-size: 11px; color: #6E6E78; font-weight: 500; }
 
-/* ── WARN BLOCKS ── */
-.warn-box { background:rgba(255,159,10,.06);border:1px solid rgba(255,159,10,.15);border-radius:8px;padding:10px 12px;margin-bottom:8px; }
-.warn-title { font-size:10px;font-weight:700;color:#FF9F0A;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px; }
-.warn-item { font-size:11px;color:#8E8E93;margin-bottom:2px; }
-.err-box { background:rgba(255,69,58,.04);border:1px solid rgba(255,69,58,.12);border-radius:8px;padding:10px 12px;margin-bottom:8px; }
-.err-title { font-size:10px;font-weight:700;color:#FF453A;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px; }
-.err-item { font-size:11px;color:#8E8E93;margin-bottom:2px; }
+/* WARN */
+.warn-box { background: rgba(232,184,75,.05); border: 1px solid rgba(232,184,75,.15); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+.warn-title { font-size: 10px; font-weight: 700; color: #E8B84B; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 5px; }
+.warn-item { font-size: 11px; color: #6E6E78; margin-bottom: 2px; }
 
-/* ── CLASIF CARD ── */
-.clasif-card { border:1px solid #2C2C2E;border-radius:8px;margin-bottom:8px;overflow:hidden; }
-.clasif-hdr { padding:8px 10px;background:#1C1C1E;font-size:11px;font-weight:600;color:#C7C7CC;border-bottom:1px solid #2C2C2E; }
-.clasif-body { padding:8px 10px; }
-.clasif-grade { display:flex;gap:8px;padding:4px 0;border-bottom:1px solid #1C1C1E;font-size:11px;color:#8E8E93; }
-.clasif-grade:last-child { border-bottom:none; }
-.grade-n { min-width:28px;font-weight:700;color:#F5C518;font-family:'JetBrains Mono',monospace;font-size:10px;padding-top:1px; }
-.clasif-ref { font-size:9px;color:#48484A;margin-top:6px;padding-top:6px;border-top:1px solid #1C1C1E;font-family:'JetBrains Mono',monospace; }
+/* COPILOT RESULT */
+.cp-box { background: #141416; border: 1px solid #1E1E20; border-radius: 10px; padding: 14px; margin-bottom: 10px; }
+.cp-label { font-size: 10px; font-weight: 700; color: #E8B84B; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+.cp-label::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: #E8B84B; display: inline-block; }
+.cp-text { font-size: 11px; color: #9E9EA8; line-height: 1.8; white-space: pre-wrap; font-family: 'Inter', sans-serif; }
 
-/* ── SUGGEST CARD ── */
-.sug-card { border:1px solid #2C2C2E;border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#1C1C1E;transition:border-color .12s; }
-.sug-card:hover { border-color:#3A3A3C; }
-.sug-tag { font-size:9px;font-weight:700;color:#48484A;text-transform:uppercase;letter-spacing:.06em; }
-.sug-title { font-size:12px;font-weight:600;color:#C7C7CC;margin:3px 0; }
-.sug-desc { font-size:11px;color:#636366; }
-.sug-action { font-size:10px;color:#F5C518;margin-top:5px;cursor:pointer; }
+/* CLASIF CARDS */
+.cl-card { border: 1px solid #1E1E20; border-radius: 8px; margin-bottom: 7px; overflow: hidden; }
+.cl-hdr { padding: 7px 10px; background: #141416; font-size: 11px; font-weight: 600; color: #AEAEB8; border-bottom: 1px solid #1E1E20; }
+.cl-body { padding: 8px 10px; }
+.cl-row { display: flex; gap: 8px; padding: 3px 0; border-bottom: 1px solid #111112; font-size: 11px; color: #6E6E78; }
+.cl-row:last-child { border-bottom: none; }
+.cl-grade { min-width: 26px; font-weight: 700; color: #E8B84B; font-family: 'JetBrains Mono', monospace; font-size: 10px; padding-top: 1px; }
 
-/* ── AI TOGGLE ── */
-.ai-toggle-wrap {
-    display: flex; align-items: center; gap: 8px;
-    background: #2C2C2E; border: 1px solid #3A3A3C;
-    border-radius: 8px; padding: 5px 10px;
-    font-size: 12px; font-weight: 600; color: #F5C518;
-    cursor: pointer; transition: all .12s;
-}
-.ai-toggle-wrap:hover { background: #3A3A3C; }
+/* SUGGEST */
+.sug-card { border: 1px solid #1E1E20; border-radius: 8px; padding: 10px 12px; margin-bottom: 7px; background: #141416; transition: border-color .12s; }
+.sug-card:hover { border-color: #2E2E32; }
+.sug-tag { font-size: 9px; font-weight: 700; color: #3E3E44; text-transform: uppercase; letter-spacing: .07em; }
+.sug-name { font-size: 12px; font-weight: 600; color: #AEAEB8; margin: 3px 0; }
+.sug-desc { font-size: 11px; color: #505055; }
+.sug-action { font-size: 10px; color: #E8B84B; margin-top: 5px; cursor: pointer; }
 
-/* ── RIGHT PANEL HEADER ── */
-.rp-header {
-    padding: 12px 14px;
-    border-bottom: 1px solid #2C2C2E;
-    display: flex; align-items: center; justify-content: space-between;
-    background: #141414;
-    position: sticky; top: 0; z-index: 10;
-}
-.rp-title { font-size: 13px; font-weight: 700; color: #E5E5EA; }
-.rp-body { padding: 12px; overflow-y: auto; }
+/* ACTION CHIPS */
+.action-bar { display: flex; gap: 6px; padding: 0 0 8px; flex-wrap: wrap; }
+.a-chip { display: inline-flex; align-items: center; gap: 5px; padding: 5px 13px; border-radius: 20px; font-size: 11px; font-weight: 500; cursor: pointer; border: 1px solid #2E2E32; background: #1E1E20; color: #6E6E78; transition: all .12s; white-space: nowrap; font-family: 'Inter', sans-serif; }
+.a-chip:hover { border-color: #E8B84B; color: #E8B84B; }
+.a-chip.prime { background: #E8B84B; border-color: #E8B84B; color: #111112; font-weight: 700; }
+.a-chip.prime:hover { background: #F5C862; box-shadow: 0 4px 12px rgba(232,184,75,.25); }
 
-/* ── BOTTOM BAR ── */
-.bottom-bar {
-    border-top: 1px solid #2C2C2E;
-    padding: 8px 14px;
-    display: flex; align-items: center; gap: 8px;
-    background: #1C1C1E;
-    flex-wrap: wrap;
-}
-.bb-pill {
-    display: inline-flex; align-items: center; gap: 5px;
-    padding: 5px 12px; border-radius: 20px;
-    font-size: 11px; font-weight: 500; cursor: pointer;
-    border: 1px solid #3A3A3C; background: #2C2C2E; color: #8E8E93;
-    transition: all .12s; white-space: nowrap;
-    font-family: 'Inter', sans-serif;
-}
-.bb-pill:hover { border-color: #F5C518; color: #F5C518; }
-.bb-pill.prime { background: #F5C518; border-color: #F5C518; color: #1C1C1E; font-weight: 700; }
-.bb-pill.prime:hover { background: #FFD700; box-shadow: 0 4px 12px rgba(245,197,24,.3); }
-.bb-saved { font-size: 11px; color: #34C759; margin-left: auto; display: flex; align-items: center; gap: 4px; }
-.bb-saved::before { content: '✓'; }
-.bb-score { display:flex;align-items:center;gap:8px; }
-.bb-score-num { font-size:16px;font-weight:700; }
-.bb-score-lbl { font-size:9px;font-weight:700;color:#48484A;text-transform:uppercase;letter-spacing:.1em; }
-.bb-track { width:44px;height:3px;background:#2C2C2E;border-radius:2px;margin-top:4px;overflow:hidden; }
-.bb-fill { height:100%;border-radius:2px;transition:width .5s; }
+/* ID PILL */
+.id-pill { font-size: 10px; font-family: 'JetBrains Mono', monospace; color: #3E3E44; background: #1E1E20; border: 1px solid #2E2E32; border-radius: 5px; padding: 3px 8px; }
 </style>
 """, unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════
-# LAYOUT — 3 columns: left panel | main | right panel
+# LAYOUT
 # ══════════════════════════════════════════════════════════════════
 rp_open = st.session_state.right_open
 if rp_open:
-    col_left, col_main, col_right = st.columns([1.05, 3.4, 1.55], gap="small")
+    col_left, col_main, col_right = st.columns([1.05, 3.5, 1.45], gap="small")
 else:
     col_left, col_main = st.columns([1.05, 4.95], gap="small")
     col_right = None
@@ -672,59 +443,51 @@ else:
 # LEFT PANEL
 # ══════════════════════════════════════════════════════════════════
 with col_left:
-    # Render logo header
     st.markdown("""
-    <div class="left-panel">
-      <div class="lp-header">
-        <div class="lp-logo">
-          <span class="logo-leaf">🌿</span>
-          <span class="logo-text">AURA</span>
-        </div>
+    <div class="lp-head">
+      <div class="lp-logo">
+        <div class="logo-mark">A</div>
+        <div><div class="logo-name">AURA</div><div class="logo-sub">Radiology Copilot</div></div>
       </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # New report button
     st.markdown("<div style='padding:10px 10px 0'>", unsafe_allow_html=True)
     st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
     if st.button("＋  Nuevo informe", use_container_width=True, key="btn_nuevo"):
-        st.session_state.reporte_html = ""
+        st.session_state.reporte_html  = ""
         st.session_state.reporte_texto = ""
-        st.session_state.dictado = ""
-        st.session_state.clasif_activas = {}
-        st.session_state.qa = {}
-        st.session_state.copilot_txt = ""
-        st.session_state.estudio_id = f"EST-{datetime.datetime.now().strftime('%Y%m%d-%H%M')}"
+        st.session_state.dictado       = ""
+        st.session_state.clasif_activas= {}
+        st.session_state.qa            = {}
+        st.session_state.copilot_txt   = ""
+        st.session_state.estudio_id    = f"EST-{datetime.datetime.now().strftime('%Y%m%d-%H%M')}"
         st.rerun()
     st.markdown('</div></div>', unsafe_allow_html=True)
 
-    # Estudios recientes
-    st.markdown('<div class="lp-section" style="padding:14px 10px 6px">Estudios recientes</div>', unsafe_allow_html=True)
+    st.markdown('<div class="lp-section">Estudios recientes</div>', unsafe_allow_html=True)
     if st.session_state.historial:
         for i, h in enumerate(reversed(st.session_state.historial[-7:])):
             ms = {"Resonancia Magnética":"RM","Tomografía Computarizada":"TC","Radiografía":"Rx","Ultrasonido":"US","PET-CT":"PET"}.get(h.get("modalidad",""),"?")
             sc = h.get("score",0)
-            badge_cls = "badge-ok" if sc>=70 else "badge-active"
+            badge_cls = "badge-ok" if sc >= 70 else "badge-warn"
             st.markdown(f"""
             <div class="hist-item">
-                <div class="hi-title">{ms} {h.get('region','')}</div>
-                <div class="hi-meta">{h.get('ts','')} · ID: {h.get('id','')[-8:]}</div>
+                <div class="hi-title">{ms} · {h.get('region','')}</div>
+                <div class="hi-meta">{h.get('ts','')} · {h.get('id','')[-8:]}</div>
                 <span class="hi-badge {badge_cls}">QA {sc}%</span>
-            </div>
-            """, unsafe_allow_html=True)
-            if st.button("Abrir", key=f"open_{i}", use_container_width=True):
+            </div>""", unsafe_allow_html=True)
+            if st.button("↩ Abrir", key=f"open_{i}", use_container_width=True):
                 st.session_state.reporte_texto = h.get("texto","")
                 st.session_state.reporte_html  = texto_a_html(h.get("texto",""))
-                st.session_state.qa = h.get("qa",{})
+                st.session_state.qa            = h.get("qa",{})
                 st.rerun()
     else:
-        st.markdown('<div style="padding:8px 14px;font-size:12px;color:#3A3A3C">Sin estudios previos</div>', unsafe_allow_html=True)
+        st.markdown('<div style="padding:8px 14px;font-size:11px;color:#2E2E32">Sin estudios previos</div>', unsafe_allow_html=True)
 
-    # Spacer then dictation zone
-    st.markdown("<div style='flex:1'></div>", unsafe_allow_html=True)
-    st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-    # Voice input zone — dark card
+    # Voice
     st.markdown('<div style="padding:0 10px">', unsafe_allow_html=True)
     st.markdown('<span class="lbl">Dictado de voz</span>', unsafe_allow_html=True)
     audio = st.audio_input("Grabar", label_visibility="collapsed", key="audio_in")
@@ -735,41 +498,40 @@ with col_left:
             st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("<div style='padding:0 10px;margin-top:8px'>", unsafe_allow_html=True)
-    # Bottom row: history icon, add icon, AI toggle
-    rc1, rc2, rc3 = st.columns([1,1,2], gap="small")
-    with rc1:
+    # Bottom row controls
+    st.markdown("<div style='padding:8px 10px 0'>", unsafe_allow_html=True)
+    ra, rb, rc = st.columns([1,1,2], gap="small")
+    with ra:
         st.markdown('<div class="btn-ghost">', unsafe_allow_html=True)
-        if st.button("🕐", use_container_width=True): pass
+        st.button("🕐", use_container_width=True, key="btn_hist_icon")
         st.markdown('</div>', unsafe_allow_html=True)
-    with rc2:
+    with rb:
         st.markdown('<div class="btn-ghost">', unsafe_allow_html=True)
-        if st.button("＋", use_container_width=True): pass
+        st.button("＋", use_container_width=True, key="btn_add_icon")
         st.markdown('</div>', unsafe_allow_html=True)
-    with rc3:
-        ai_label = "AI  ●" if st.session_state.ai_toggle else "AI  ○"
+    with rc:
+        ai_lbl = "AI  ●" if st.session_state.ai_toggle else "AI  ○"
         st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
-        if st.button(ai_label, use_container_width=True, key="ai_toggle_btn"):
+        if st.button(ai_lbl, use_container_width=True, key="ai_toggle_btn"):
             st.session_state.ai_toggle = not st.session_state.ai_toggle
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # Big yellow MIC / GENERATE button
-    st.markdown("<div style='padding:10px 10px 0'>", unsafe_allow_html=True)
-    st.markdown('<div class="btn-yellow">', unsafe_allow_html=True)
+    # Generate button
+    st.markdown("<div style='padding:8px 10px 0'>", unsafe_allow_html=True)
+    st.markdown('<div class="btn-accent">', unsafe_allow_html=True)
     procesar = st.button("🎙  Generar informe", use_container_width=True, key="btn_gen")
     st.markdown('</div>', unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # Update report button
-    st.markdown("<div style='padding:8px 10px 14px'>", unsafe_allow_html=True)
-    st.markdown('<div class="btn-update">', unsafe_allow_html=True)
-    if st.button("Actualizar informe", use_container_width=True, key="btn_update"):
-        pass  # future: sync editor content back
+    # Update
+    st.markdown("<div style='padding:6px 10px 14px'>", unsafe_allow_html=True)
+    st.markdown('<div class="btn-solid">', unsafe_allow_html=True)
+    st.button("Actualizar informe", use_container_width=True, key="btn_update")
     st.markdown('</div></div>', unsafe_allow_html=True)
 
-    # Settings expander
+    # Settings
     with st.expander("CONFIGURACIÓN"):
         st.text_input("API Key", type="password", key="api_key", label_visibility="collapsed", placeholder="DeepSeek / OpenAI key")
         st.radio("Modelo", ["deepseek","openai_mini","openai_4"], key="proveedor",
@@ -793,21 +555,21 @@ with col_left:
         st.text_area("Dictado manual", key="dictado", height=80, label_visibility="collapsed",
                      placeholder="Escribe los hallazgos aquí…")
         if st.session_state.dictado:
-            st.markdown(f'<div style="font-size:10px;color:#48484A;padding:4px 0">{len(st.session_state.dictado.split())} palabras dictadas</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="font-size:10px;color:#3E3E44;padding:3px 0">{len(st.session_state.dictado.split())} palabras</div>', unsafe_allow_html=True)
 
     with st.expander("CLASIFICACIONES"):
         c_sel = st.selectbox("Clasificación", list(KB_CLASIF.keys()), label_visibility="collapsed", key="c_sel")
         if c_sel:
             g_sel = st.selectbox("Grado", list(KB_CLASIF[c_sel]["grados"].keys()), label_visibility="collapsed", key="g_sel")
             if g_sel:
-                st.markdown(f'<div style="font-size:11px;color:#636366;padding:4px 0">{KB_CLASIF[c_sel]["grados"][g_sel]}</div>', unsafe_allow_html=True)
-            if st.button("+ Agregar al caso"):
+                st.markdown(f'<div style="font-size:11px;color:#505055;padding:3px 0">{KB_CLASIF[c_sel]["grados"][g_sel]}</div>', unsafe_allow_html=True)
+            if st.button("＋ Agregar al caso"):
                 st.session_state.clasif_activas[c_sel] = g_sel
                 st.rerun()
         if st.session_state.clasif_activas:
             for k,v in list(st.session_state.clasif_activas.items()):
-                cc1,cc2 = st.columns([4,1])
-                with cc1: st.markdown(f'<div style="font-size:11px;color:#8E8E93;padding:2px 0"><span style="color:#F5C518;font-weight:700">{k}</span> Gr.{v}</div>', unsafe_allow_html=True)
+                cc1, cc2 = st.columns([4,1])
+                with cc1: st.markdown(f'<div style="font-size:11px;color:#6E6E78;padding:2px 0"><span style="color:#E8B84B;font-weight:700">{k}</span> Gr.{v}</div>', unsafe_allow_html=True)
                 with cc2:
                     if st.button("×", key=f"rm_{k}"): del st.session_state.clasif_activas[k]; st.rerun()
 
@@ -825,8 +587,7 @@ if procesar:
                     messages=[
                         {"role":"system","content":build_system_prompt()},
                         {"role":"user","content":f"DICTADO:\n{dictado}"}
-                    ], temperature=0.1
-                )
+                    ], temperature=0.1)
                 texto = res.choices[0].message.content
                 st.session_state.reporte_texto = texto
                 st.session_state.reporte_html  = texto_a_html(texto)
@@ -837,42 +598,32 @@ if procesar:
                 st.session_state.historial.append({"texto":texto,"qa":qa,"region":st.session_state.region,
                     "modalidad":st.session_state.modalidad,"score":qa["score"],"ts":ts,"id":eid})
                 st.rerun()
-            except Exception as e:
-                st.error(f"Error: {e}")
-    elif not client:
-        st.warning("Ingresa tu API Key en Configuración.")
-    else:
-        st.warning("Escribe o dicta los hallazgos primero.")
+            except Exception as e: st.error(f"Error: {e}")
+    elif not client: st.warning("Ingresa tu API Key en Configuración.")
+    else:            st.warning("Escribe o dicta los hallazgos primero.")
 
 # ══════════════════════════════════════════════════════════════════
-# MAIN PANEL — topbar + editor
+# MAIN PANEL
 # ══════════════════════════════════════════════════════════════════
 with col_main:
-    now_str = datetime.datetime.now().strftime("%d %b %Y, %I:%M %p")
     region    = st.session_state.region
     modalidad = st.session_state.modalidad
-    ms = {"Resonancia Magnética":"RM","Tomografía Computarizada":"TC","Radiografía":"Rx",
-          "Ultrasonido":"US","PET-CT":"PET"}.get(modalidad, modalidad[:2])
-    titulo = f"{ms} {region.upper()}"
+    ms = {"Resonancia Magnética":"RM","Tomografía Computarizada":"TC","Radiografía":"Rx","Ultrasonido":"US","PET-CT":"PET"}.get(modalidad, modalidad[:2])
+    eid = st.session_state.estudio_id
 
-    # ── Topbar ──
+    # Topbar
     st.markdown(f"""
-    <div class="aura-topbar">
-        <button class="tb-template-btn">📤 Upload Templates</button>
-        <div style="position:relative">
-            <select class="tb-study-select">
-                <option>Seleccionar plantilla</option>
-                <option>{modalidad}</option>
-            </select>
-        </div>
+    <div class="topbar">
+        <button class="tb-chip">↑ Plantilla</button>
         <div class="tb-sep"></div>
+        <span class="tb-title">{ms} · {region.upper()}</span>
+        <div class="tb-sep"></div>
+        <span class="id-pill">{eid}</span>
         <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
-            <button class="tb-reports-btn">📊 Reports</button>
-            <div class="tb-sep"></div>
-            <button class="tb-new-btn">📄 New Report</button>
+            <button class="tb-chip">📊 Reportes</button>
             <div class="tb-sep"></div>
             <div class="tb-user">
-                <div class="tb-user-dot">A</div>
+                <div class="tb-avatar">A</div>
                 Dr. Alejandro M.
             </div>
         </div>
@@ -888,196 +639,105 @@ with col_main:
 <meta charset="UTF-8">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-*, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
-html, body {{
-    background: #1C1C1E;
-    font-family: 'Inter', sans-serif;
-    height: 100vh; overflow: hidden;
-    display: flex; flex-direction: column;
-    color: #E5E5EA;
-}}
+*,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
+html,body{{background:#111112;font-family:'Inter',sans-serif;height:100vh;overflow:hidden;display:flex;flex-direction:column;color:#E2E2E7}}
 
 /* TOOLBAR */
-.toolbar {{
-    background: #141414;
-    border-bottom: 1px solid #2C2C2E;
-    padding: 8px 14px;
-    display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
-    position: sticky; top: 0; z-index: 50;
-}}
-.tg {{
-    display: flex; align-items: center; gap: 2px;
-    padding-right: 8px; border-right: 1px solid #2C2C2E;
-}}
-.tg:last-of-type {{ border-right: none; padding-right: 0; }}
-.tb {{
-    background: none; border: 1px solid transparent; color: #636366;
-    font-size: 12px; font-family: 'Inter', sans-serif;
-    padding: 4px 8px; border-radius: 5px; cursor: pointer;
-    transition: all .1s; min-width: 28px; text-align: center;
-    line-height: 1.4; white-space: nowrap;
-}}
-.tb:hover {{ background: #2C2C2E; color: #C7C7CC; border-color: #3A3A3C; }}
-.tb.on {{ background: rgba(245,197,24,.12); border-color: rgba(245,197,24,.25); color: #F5C518; }}
-.tsel {{
-    background: #2C2C2E; border: 1px solid #3A3A3C; color: #8E8E93;
-    font-size: 11px; font-family: 'Inter', sans-serif;
-    padding: 4px 6px; border-radius: 5px; outline: none; cursor: pointer;
-    appearance: none;
-}}
-.tsel:focus {{ border-color: #F5C518; }}
-.cbg {{
-    width: 15px; height: 15px; border-radius: 50%;
-    cursor: pointer; border: 2px solid transparent; flex-shrink: 0;
-    transition: all .12s;
-}}
-.cbg:hover, .cbg.on {{ border-color: #F5C518; box-shadow: 0 0 0 2px rgba(245,197,24,.2); }}
-.tlabel {{ font-size: 10px; color: #48484A; white-space: nowrap; font-family: 'Inter', sans-serif; }}
-.tb-icon {{ font-size: 13px; line-height: 1; }}
-.copy-btn {{
-    margin-left: auto;
-    background: #2C2C2E; border: 1px solid #3A3A3C; color: #8E8E93;
-    font-size: 11px; font-family: 'Inter', sans-serif; font-weight: 500;
-    padding: 4px 10px; border-radius: 6px; cursor: pointer;
-    display: flex; align-items: center; gap: 5px; transition: all .12s;
-    white-space: nowrap;
-}}
-.copy-btn:hover {{ color: #E5E5EA; border-color: #48484A; }}
+.toolbar{{background:#0D0D0F;border-bottom:1px solid #1E1E20;padding:7px 14px;display:flex;align-items:center;gap:3px;flex-wrap:wrap;position:sticky;top:0;z-index:50}}
+.tg{{display:flex;align-items:center;gap:2px;padding-right:8px;border-right:1px solid #1E1E20}}
+.tg:last-of-type{{border-right:none;padding-right:0}}
+.tb{{background:none;border:1px solid transparent;color:#505055;font-size:11px;font-family:'Inter',sans-serif;padding:4px 7px;border-radius:5px;cursor:pointer;transition:all .1s;min-width:26px;text-align:center;line-height:1.4;white-space:nowrap}}
+.tb:hover{{background:#1E1E20;color:#AEAEB8;border-color:#2E2E32}}
+.tb.on{{background:rgba(232,184,75,.1);border-color:rgba(232,184,75,.2);color:#E8B84B}}
+.tsel{{background:#1E1E20;border:1px solid #2E2E32;color:#6E6E78;font-size:11px;font-family:'Inter',sans-serif;padding:4px 6px;border-radius:5px;outline:none;cursor:pointer}}
+.tsel:focus{{border-color:#E8B84B}}
+.bg-dot{{width:14px;height:14px;border-radius:50%;cursor:pointer;border:2px solid transparent;flex-shrink:0;transition:all .12s}}
+.bg-dot:hover,.bg-dot.on{{border-color:#E8B84B;box-shadow:0 0 0 2px rgba(232,184,75,.18)}}
+.tlabel{{font-size:10px;color:#3E3E44;white-space:nowrap;font-family:'Inter',sans-serif}}
+.copy-btn{{margin-left:auto;background:#1E1E20;border:1px solid #2E2E32;color:#6E6E78;font-size:11px;font-family:'Inter',sans-serif;font-weight:500;padding:4px 10px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all .12s;white-space:nowrap}}
+.copy-btn:hover{{color:#E2E2E7;border-color:#3E3E44}}
 
 /* EDITOR */
-.editor-wrap {{ flex: 1; overflow-y: auto; }}
-#doc {{
-    min-height: 100%; padding: 30px 40px;
-    font-family: 'Inter', sans-serif; font-size: 14px;
-    line-height: 1.9; color: #C7C7CC;
-    outline: none; background: #1C1C1E;
-    transition: background .3s, color .3s;
-}}
-#doc h3.sec {{
-    font-family: 'Inter', sans-serif;
-    font-size: 11px; font-weight: 700;
-    color: #E5E5EA; letter-spacing: .08em;
-    text-transform: uppercase; margin: 22px 0 8px;
-    padding-bottom: 7px;
-    border-bottom: 1px solid #2C2C2E;
-}}
-#doc p {{ margin-bottom: 8px; color: #C7C7CC; line-height: 1.85; }}
-#doc strong, #doc b {{ color: #E5E5EA; font-weight: 600; }}
-#doc li {{
-    margin-left: 18px; margin-bottom: 5px;
-    color: #C7C7CC; list-style-type: disc; padding-left: 4px;
-}}
-#doc hr {{ border: none; border-top: 1px solid #2C2C2E; margin: 16px 0; }}
+.editor-wrap{{flex:1;overflow-y:auto}}
+#doc{{min-height:100%;padding:28px 40px;font-family:'Inter',sans-serif;font-size:14px;line-height:1.9;color:#C7C7D0;outline:none;background:#111112;transition:background .2s,color .2s}}
+#doc h3.sec{{font-family:'Inter',sans-serif;font-size:10px;font-weight:700;color:#E2E2E7;letter-spacing:.09em;text-transform:uppercase;margin:22px 0 8px;padding-bottom:7px;border-bottom:1px solid #1E1E20}}
+#doc p{{margin-bottom:8px;color:#C7C7D0;line-height:1.85}}
+#doc strong,#doc b{{color:#E2E2E7;font-weight:600}}
+#doc li{{margin-left:18px;margin-bottom:5px;color:#C7C7D0;list-style-type:disc;padding-left:4px}}
+#doc hr{{border:none;border-top:1px solid #1E1E20;margin:14px 0}}
 
 /* BOTTOM BAR */
-.bbar {{
-    background: #141414; border-top: 1px solid #2C2C2E;
-    padding: 8px 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-}}
-.bp {{
-    display: inline-flex; align-items: center; gap: 5px;
-    padding: 5px 13px; border-radius: 20px;
-    font-size: 11px; font-weight: 500; cursor: pointer;
-    border: 1px solid #3A3A3C; background: #2C2C2E; color: #8E8E93;
-    transition: all .12s; white-space: nowrap;
-    font-family: 'Inter', sans-serif;
-}}
-.bp:hover {{ border-color: #F5C518; color: #F5C518; }}
-.bp.prime {{
-    background: #F5C518; border-color: #F5C518; color: #1C1C1E; font-weight: 700;
-}}
-.bp.prime:hover {{ background: #FFD700; box-shadow: 0 4px 12px rgba(245,197,24,.3); }}
-
-/* SCORE */
-.score-wrap {{ margin-left: auto; display: flex; align-items: center; gap: 10px; }}
-.score-n {{ font-size: 18px; font-weight: 700; color: #E5E5EA; font-family: 'Inter', sans-serif; }}
-.score-l {{ font-size: 9px; font-weight: 700; color: #48484A; text-transform: uppercase; letter-spacing: .1em; }}
-.score-track {{ width: 44px; height: 3px; background: #2C2C2E; border-radius: 2px; margin-top: 5px; overflow: hidden; }}
-.score-bar {{ height: 100%; border-radius: 2px; transition: width .5s; }}
-.saved {{ font-size: 11px; color: #34C759; display: flex; align-items: center; gap: 4px; }}
+.bbar{{background:#0D0D0F;border-top:1px solid #1E1E20;padding:8px 14px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}}
+.bp{{display:inline-flex;align-items:center;gap:5px;padding:5px 13px;border-radius:20px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid #2E2E32;background:#1E1E20;color:#6E6E78;transition:all .12s;white-space:nowrap;font-family:'Inter',sans-serif}}
+.bp:hover{{border-color:#E8B84B;color:#E8B84B}}
+.bp.prime{{background:#E8B84B;border-color:#E8B84B;color:#111112;font-weight:700}}
+.bp.prime:hover{{background:#F5C862;box-shadow:0 4px 12px rgba(232,184,75,.25)}}
+.score-wrap{{margin-left:auto;display:flex;align-items:center;gap:10px}}
+.score-n{{font-size:17px;font-weight:700;color:#E2E2E7;font-family:'Inter',sans-serif}}
+.score-l{{font-size:9px;font-weight:700;color:#3E3E44;text-transform:uppercase;letter-spacing:.09em}}
+.score-track{{width:42px;height:3px;background:#1E1E20;border-radius:2px;margin-top:4px;overflow:hidden}}
+.score-bar{{height:100%;border-radius:2px;transition:width .5s}}
+.saved{{font-size:11px;color:#34C759;display:flex;align-items:center;gap:4px}}
 
 /* SLASH MENU */
-.sm {{
-    position: fixed; background: #1C1C1E;
-    border: 1px solid #3A3A3C; border-radius: 10px;
-    box-shadow: 0 12px 32px rgba(0,0,0,.7);
-    z-index: 1000; min-width: 280px; overflow: hidden; display: none;
-}}
-.sm-hdr {{
-    padding: 8px 14px 5px; font-size: 10px; font-weight: 700;
-    color: #48484A; letter-spacing: .08em; text-transform: uppercase;
-    border-bottom: 1px solid #2C2C2E;
-}}
-.si {{
-    padding: 9px 14px; cursor: pointer; transition: background .1s;
-    font-size: 12px; color: #C7C7CC;
-    display: flex; align-items: center; gap: 10px;
-    font-family: 'Inter', sans-serif;
-}}
-.si:hover, .si.sel {{ background: #2C2C2E; }}
-.sk {{ color: #F5C518; font-weight: 700; font-family: 'JetBrains Mono', monospace; font-size: 11px; min-width: 95px; }}
-.sd {{ color: #636366; font-size: 11px; }}
+.sm{{position:fixed;background:#141416;border:1px solid #2E2E32;border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.8);z-index:1000;min-width:280px;overflow:hidden;display:none}}
+.sm-hdr{{padding:8px 14px 5px;font-size:9px;font-weight:700;color:#3E3E44;letter-spacing:.09em;text-transform:uppercase;border-bottom:1px solid #1E1E20}}
+.si{{padding:9px 14px;cursor:pointer;transition:background .1s;font-size:12px;color:#AEAEB8;display:flex;align-items:center;gap:10px;font-family:'Inter',sans-serif}}
+.si:hover,.si.sel{{background:#1E1E20}}
+.sk{{color:#E8B84B;font-weight:700;font-family:'JetBrains Mono',monospace;font-size:10px;min-width:95px}}
+.sd{{color:#505055;font-size:11px}}
 </style>
 </head>
 <body>
 
-<!-- TOOLBAR -->
 <div class="toolbar">
   <div class="tg">
-    <button class="tb tb-icon" onclick="fmt('undo')" title="Deshacer">↩</button>
-    <button class="tb tb-icon" onclick="fmt('redo')" title="Rehacer">↪</button>
+    <button class="tb" onclick="fmt('undo')">↩</button>
+    <button class="tb" onclick="fmt('redo')">↪</button>
   </div>
   <div class="tg">
-    <button class="tb" id="btnB" onclick="fmt('bold')" title="Negrita (Ctrl+B)"><b>B</b></button>
-    <button class="tb" id="btnI" onclick="fmt('italic')" title="Cursiva"><i>I</i></button>
-    <button class="tb" id="btnU" onclick="fmt('underline')" title="Subrayado"><u>U</u></button>
-    <button class="tb" id="btnS" onclick="fmt('strikeThrough')" title="Tachado"><s>S</s></button>
+    <button class="tb" id="btnB" onclick="fmt('bold')"><b>B</b></button>
+    <button class="tb" id="btnI" onclick="fmt('italic')"><i>I</i></button>
+    <button class="tb" id="btnU" onclick="fmt('underline')"><u>U</u></button>
   </div>
   <div class="tg">
-    <button class="tb" onclick="fmt('insertUnorderedList')" title="Viñetas">• Lista</button>
-    <button class="tb" onclick="fmt('insertOrderedList')" title="Numerada">1. Lista</button>
+    <button class="tb" onclick="fmt('insertUnorderedList')">• Lista</button>
+    <button class="tb" onclick="fmt('insertOrderedList')">1. Lista</button>
   </div>
   <div class="tg">
-    <button class="tb" onclick="fmt('justifyLeft')" title="Izquierda">⬛</button>
-    <button class="tb" onclick="fmt('justifyCenter')" title="Centro">▣</button>
-    <button class="tb" onclick="fmt('justifyFull')" title="Justificado">▤</button>
-  </div>
-  <div class="tg">
-    <button class="tb" onclick="insSection()" title="Sección">§ Sec</button>
-    <button class="tb" onclick="insHR()" title="Separador">— HR</button>
+    <button class="tb" onclick="insSection()">§ Sec</button>
+    <button class="tb" onclick="insHR()">— HR</button>
   </div>
   <div class="tg" style="gap:8px;align-items:center">
-    <span class="tlabel">AI:</span>
-    <select class="tsel" style="width:70px" title="Estilo de lenguaje">
+    <span class="tlabel">Estilo</span>
+    <select class="tsel" style="width:80px">
       <option>Académico</option><option>Conservador</option><option>Directo</option>
     </select>
-    <select class="tsel" style="width:90px" title="Destinatario">
+    <select class="tsel" style="width:100px">
       <option>Médico tratante</option><option>Paciente</option><option>Referente</option>
     </select>
   </div>
-  <div class="tg" style="gap:5px;align-items:center">
+  <div class="tg" style="gap:6px;align-items:center">
     <span class="tlabel">Fondo</span>
-    <div class="cbg on"  style="background:#1C1C1E" onclick="setBg(this,'#1C1C1E','#C7C7CC')" title="Dark"></div>
-    <div class="cbg"     style="background:#0A1018" onclick="setBg(this,'#0A1018','#C8DAF0')" title="PACS"></div>
-    <div class="cbg"     style="background:#FFFFFF" onclick="setBg(this,'#FFFFFF','#2D3748')" title="Blanco"></div>
-    <div class="cbg"     style="background:#FAFAF8" onclick="setBg(this,'#FAFAF8','#2D3748')" title="Warm"></div>
+    <div class="bg-dot on"  style="background:#111112" onclick="setBg(this,'#111112','#C7C7D0')" title="Dark"></div>
+    <div class="bg-dot"     style="background:#081018" onclick="setBg(this,'#081018','#C8D8F0')" title="PACS"></div>
+    <div class="bg-dot"     style="background:#1A1A2E" onclick="setBg(this,'#1A1A2E','#C0C8E8')" title="Azul profundo"></div>
+    <div class="bg-dot"     style="background:#FFFFFF" onclick="setBg(this,'#FFFFFF','#1C2132')" title="Blanco"></div>
+    <div class="bg-dot"     style="background:#F8F7F2" onclick="setBg(this,'#F8F7F2','#2D3748')" title="Cálido"></div>
   </div>
-  <button class="copy-btn" onclick="copyAll()">⎘ Copiar informe</button>
+  <button class="copy-btn" onclick="copyAll()">⎘ Copiar</button>
 </div>
 
-<!-- EDITOR -->
 <div class="editor-wrap">
   <div id="doc" contenteditable="true" spellcheck="true" lang="es">
     {content}
   </div>
 </div>
 
-<!-- SLASH MENU -->
 <div id="sm" class="sm">
-  <div class="sm-hdr">Plantillas & Clasificaciones — escribe /comando</div>
+  <div class="sm-hdr">Plantillas — escribe /comando</div>
 </div>
 
-<!-- BOTTOM BAR -->
 <div class="bbar">
   <button class="bp" onclick="send('suggest_conclusion')">＋ Sugerir conclusión</button>
   <button class="bp" onclick="send('optimize')">✦ Optimizar</button>
@@ -1085,12 +745,12 @@ html, body {{
   <button class="bp" onclick="send('definiciones')">◎ Definiciones</button>
   <button class="bp" onclick="send('qa_full')">◈ Auditar QA</button>
   <button class="bp prime" onclick="send('export')">↓ Exportar .docx</button>
-  <span class="saved" id="savedLbl" style="display:none">Guardado {now_str.split(",")[1].strip()}</span>
+  <span class="saved" id="savedLbl" style="display:none">✓ Auto-guardado</span>
   <div class="score-wrap">
     <div>
       <div class="score-n" id="sNum">—</div>
       <div class="score-l">Calidad</div>
-      <div class="score-track"><div class="score-bar" id="sBar" style="width:0;background:#48484A"></div></div>
+      <div class="score-track"><div class="score-bar" id="sBar" style="width:0;background:#3E3E44"></div></div>
     </div>
   </div>
 </div>
@@ -1098,42 +758,41 @@ html, body {{
 <script>
 var doc=document.getElementById('doc');
 var sm=document.getElementById('sm');
-var slashOn=false, slashSel=0;
+var slashOn=false,slashSel=0;
 
 var CMDS=[
-  {{k:'/stoller',l:'Stoller',d:'Clasificación meniscal RM',t:'<h3 class="sec">MENISCOS</h3><p><strong>Menisco medial/lateral:</strong> alteración de señal grado [I/II/III] de Stoller en [cuerpo / cuerno], compatible con [cambio degenerativo / desgarro]. [Extrusión de __ mm].</p>'}},
-  {{k:'/icrs',l:'ICRS',d:'Cartílago articular',t:'<p><strong>Cartílago articular:</strong> adelgazamiento condral focal grado [I/II/III/IV] de ICRS en [localización], extensión de __ mm. [Edema subcondral reactivo].</p>'}},
+  {{k:'/stoller',l:'Stoller',d:'Clasificación meniscal RM',t:'<h3 class="sec">MENISCOS</h3><p><strong>Menisco medial/lateral:</strong> alteración de señal grado [I/II/III] de Stoller en [cuerpo / cuerno], compatible con [cambio degenerativo / desgarro].</p>'}},
+  {{k:'/icrs',l:'ICRS',d:'Cartílago articular',t:'<p><strong>Cartílago articular:</strong> adelgazamiento condral focal grado [I/II/III/IV] de ICRS en [localización], extensión de __ mm.</p>'}},
   {{k:'/kl',l:'Kellgren-Lawrence',d:'Osteoartrosis',t:'<p>Hallazgos compatibles con osteoartrosis grado [I/II/III/IV] de Kellgren-Lawrence en [compartimento].</p>'}},
-  {{k:'/lca',l:'Hope & Feagin',d:'Lesión LCA',t:'<p><strong>Ligamento cruzado anterior:</strong> [señal heterogénea / discontinuidad], compatible con lesión [parcial / completa / crónica] según Hope &amp; Feagin.</p>'}},
-  {{k:'/pfirrmann',l:'Pfirrmann',d:'Degeneración discal',t:'<p>Disco [L_-L_]: degeneración grado [I/II/III/IV/V] de Pfirrmann. [Descripción de señal y altura discal].</p>'}},
-  {{k:'/modic',l:'Modic',d:'Placa terminal vertebral',t:'<p>Cambios tipo Modic [I/II/III] en placa terminal de [nivel], indicativos de [edema/grasa/esclerosis].</p>'}},
-  {{k:'/tirads',l:'ACR TIRADS',d:'Nódulo tiroideo',t:'<p><strong>Nódulo tiroideo</strong> [lóbulo]: [descripción]. Clasificación ACR TIRADS [2-5]. [Recomendación según tamaño].</p>'}},
-  {{k:'/birads',l:'BI-RADS',d:'Hallazgo mamario',t:'<p><strong>Hallazgo mamario:</strong> [descripción]. Categoría ACR BI-RADS [1-6]. [Recomendación].</p>'}},
+  {{k:'/lca',l:'Hope & Feagin',d:'Lesión LCA',t:'<p><strong>Ligamento cruzado anterior:</strong> [señal heterogénea / discontinuidad], compatible con lesión [parcial / completa / crónica].</p>'}},
+  {{k:'/pfirrmann',l:'Pfirrmann',d:'Degeneración discal',t:'<p>Disco [L_-L_]: degeneración grado [I/II/III/IV/V] de Pfirrmann.</p>'}},
+  {{k:'/modic',l:'Modic',d:'Placa terminal vertebral',t:'<p>Cambios tipo Modic [I/II/III] en placa terminal de [nivel].</p>'}},
+  {{k:'/tirads',l:'ACR TIRADS',d:'Nódulo tiroideo',t:'<p><strong>Nódulo tiroideo</strong> [lóbulo]: [descripción]. Clasificación ACR TIRADS [2-5].</p>'}},
+  {{k:'/birads',l:'BI-RADS',d:'Hallazgo mamario',t:'<p><strong>Hallazgo mamario:</strong> [descripción]. Categoría ACR BI-RADS [1-6].</p>'}},
   {{k:'/lirads',l:'LI-RADS',d:'Lesión hepática',t:'<p><strong>Lesión focal hepática:</strong> [descripción]. Clasificación LI-RADS [LR-1 a LR-5/M].</p>'}},
-  {{k:'/fleischner',l:'Fleischner 2017',d:'Nódulo pulmonar',t:'<p><strong>Nódulo pulmonar</strong> [sólido/subsólido] de __ mm en [lóbulo]. Criterios Fleischner 2017: [recomendación de seguimiento].</p>'}},
+  {{k:'/fleischner',l:'Fleischner 2017',d:'Nódulo pulmonar',t:'<p><strong>Nódulo pulmonar</strong> [sólido/subsólido] de __ mm en [lóbulo]. Criterios Fleischner 2017: [recomendación].</p>'}},
   {{k:'/tecnica',l:'Técnica estándar',d:'Plantilla de técnica',t:'<h3 class="sec">TÉCNICA</h3><p>Estudio de [modalidad] de [región] en equipo de [__] Tesla. Secuencias [describir] en planos [axial/coronal/sagital]. [Sin / Con] contraste.</p>'}},
-  {{k:'/impresion',l:'Impresión DX',d:'Plantilla de conclusión',t:'<h3 class="sec">IMPRESIÓN DIAGNÓSTICA</h3><li>Hallazgo principal con clasificación y grado. Recomendación de manejo.</li><li>Hallazgo secundario.</li><li>Seguimiento o estudios complementarios.</li>'}},
-  {{k:'/conclusion',l:'Conclusión rápida',d:'Bloque de conclusión simple',t:'<h3 class="sec">CONCLUSIÓN</h3><li>.</li><li>Hallazgos descritos.</li>'}},
+  {{k:'/impresion',l:'Impresión DX',d:'Plantilla de conclusión',t:'<h3 class="sec">IMPRESIÓN DIAGNÓSTICA</h3><li>Hallazgo principal con clasificación y grado.</li><li>Hallazgo secundario.</li><li>Seguimiento o estudios complementarios.</li>'}},
 ];
 
-function fmt(cmd){{ doc.focus(); document.execCommand(cmd,false,null); updBtns(); }}
+function fmt(cmd){{doc.focus();document.execCommand(cmd,false,null);updBtns();}}
 function updBtns(){{
-  [['bold','btnB'],['italic','btnI'],['underline','btnU'],['strikeThrough','btnS']].forEach(function(p){{
+  [['bold','btnB'],['italic','btnI'],['underline','btnU']].forEach(function(p){{
     var b=document.getElementById(p[1]);
-    if(b) b.classList.toggle('on',document.queryCommandState(p[0]));
+    if(b)b.classList.toggle('on',document.queryCommandState(p[0]));
   }});
 }}
 function setBg(el,bg,col){{
-  doc.style.background=bg; doc.style.color=col;
-  document.querySelectorAll('.cbg').forEach(function(d){{d.classList.remove('on')}});
+  doc.style.background=bg;doc.style.color=col;
+  document.querySelectorAll('.bg-dot').forEach(function(d){{d.classList.remove('on')}});
   el.classList.add('on');
-  var isDark=bg!=='#FFFFFF'&&bg!=='#FAFAF8';
+  var isDark=bg!=='#FFFFFF'&&bg!=='#F8F7F2';
   document.querySelectorAll('#doc h3.sec').forEach(function(t){{
-    t.style.color=isDark?'#E5E5EA':'#1A202C';
-    t.style.borderBottomColor=isDark?'#2C2C2E':'#E2E8F0';
+    t.style.color=isDark?'#E2E2E7':'#1A202C';
+    t.style.borderBottomColor=isDark?'#1E1E20':'#E2E8F0';
   }});
   document.querySelectorAll('#doc strong,#doc b').forEach(function(t){{
-    t.style.color=isDark?'#E5E5EA':'#1A202C';
+    t.style.color=isDark?'#E2E2E7':'#1A202C';
   }});
 }}
 function insSection(){{doc.focus();document.execCommand('insertHTML',false,'<h3 class="sec">NUEVA SECCIÓN</h3><p></p>');}}
@@ -1146,17 +805,15 @@ function calcScore(){{
   var words=doc.innerText.trim().split(' ').filter(Boolean).length;
   return Math.min(100,Math.round((found/4)*40+Math.min(words/200,1)*40+(found>=2?20:0)));
 }}
-
 function updScore(){{
   var s=calcScore();
   document.getElementById('sNum').textContent=s+'%';
   var b=document.getElementById('sBar');
   b.style.width=s+'%';
-  b.style.background=s>=80?'#34C759':s>=50?'#FF9F0A':'#FF453A';
-  if(s>0) document.getElementById('savedLbl').style.display='flex';
+  b.style.background=s>=80?'#34C759':s>=50?'#E8B84B':'#FF453A';
+  if(s>0)document.getElementById('savedLbl').style.display='flex';
 }}
 
-/* SLASH COMMAND */
 function showSlash(filter){{
   var items=filter?CMDS.filter(function(c){{return c.k.includes(filter)||c.l.toLowerCase().includes(filter)}}):CMDS;
   if(!items.length){{hideSlash();return;}}
@@ -1166,15 +823,15 @@ function showSlash(filter){{
   var html=items.map(function(c,i){{
     return '<div class="si'+(i===0?' sel':'')+'" onclick="insCmd(\''+c.k+'\')"><span class="sk">'+c.k+'</span><div><div style="font-weight:600;font-size:12px">'+c.l+'</div><span class="sd">'+c.d+'</span></div></div>';
   }}).join('');
-  sm.innerHTML='<div class="sm-hdr">Plantillas &amp; Clasificaciones</div>'+html;
+  sm.innerHTML='<div class="sm-hdr">Plantillas</div>'+html;
   sm.style.display='block';
   sm.style.left=Math.max(8,r.left)+'px';
   sm.style.top=(r.bottom+6)+'px';
-  slashOn=true; slashSel=0;
+  slashOn=true;slashSel=0;
 }}
 function hideSlash(){{sm.style.display='none';slashOn=false;slashSel=0;}}
 function insCmd(cmd){{
-  hideSlash(); doc.focus();
+  hideSlash();doc.focus();
   var sel=window.getSelection();
   if(sel.rangeCount){{
     var range=sel.getRangeAt(0);
@@ -1183,7 +840,7 @@ function insCmd(cmd){{
     if(si>=0){{range.setStart(range.startContainer,si);range.deleteContents();}}
   }}
   var c=CMDS.find(function(x){{return x.k===cmd;}});
-  if(c) document.execCommand('insertHTML',false,c.t);
+  if(c)document.execCommand('insertHTML',false,c.t);
 }}
 
 doc.addEventListener('keydown',function(e){{
@@ -1196,13 +853,13 @@ doc.addEventListener('keydown',function(e){{
   }}
 }});
 doc.addEventListener('keyup',function(e){{
-  updBtns(); updScore();
+  updBtns();updScore();
   var sel=window.getSelection();
   if(!sel.rangeCount)return;
   var r=sel.getRangeAt(0);
   var txt=((r.startContainer.textContent||'').slice(0,r.startOffset));
-  var m=txt.match(new RegExp('/(\\w*)$'));
-  if(m)showSlash(m[1]); else hideSlash();
+  var m=txt.match(/(\/\w*)$/);
+  if(m)showSlash(m[1]);else hideSlash();
 }});
 doc.addEventListener('mouseup',function(){{updBtns();hideSlash();}});
 document.addEventListener('click',function(e){{if(!sm.contains(e.target))hideSlash();}});
@@ -1214,11 +871,9 @@ function copyAll(){{
   document.execCommand('copy');
   window.getSelection().removeAllRanges();
 }}
-
 function send(type){{
   window.parent.postMessage({{type:type,html:doc.innerHTML,text:doc.innerText}},'*');
 }}
-
 window.addEventListener('load',function(){{updScore();}});
 </script>
 </body>
@@ -1226,7 +881,7 @@ window.addEventListener('load',function(){{updScore();}});
 
     components.html(editor_html, height=700, scrolling=False)
 
-    # ── Action buttons below editor ──
+    # ── Action buttons ──
     st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
     ba1, ba2, ba3, ba4 = st.columns(4, gap="small")
     with ba1:
@@ -1285,118 +940,99 @@ window.addEventListener('load',function(){{updScore();}});
 # ══════════════════════════════════════════════════════════════════
 # RIGHT PANEL
 # ══════════════════════════════════════════════════════════════════
-# Toggle trigger (always visible)
-st.markdown("""
-<div class="rp-trigger" onclick="window.parent.postMessage({type:'toggle_right'},'*')">◀</div>
-""", unsafe_allow_html=True)
-
 if col_right:
     with col_right:
-        # Header with tabs
         st.markdown("""
-        <div class="rp-header">
+        <div class="rp-head">
           <span class="rp-title">Asistente IA</span>
         </div>
         """, unsafe_allow_html=True)
 
-        rp_t1, rp_t2, rp_t3 = st.columns(3, gap="small")
-        with rp_t1:
+        # Tabs
+        rt1, rt2, rt3 = st.columns(3, gap="small")
+        with rt1:
             if st.button("Sugerencias", use_container_width=True, key="tab_sug"):
-                st.session_state.copilot_tipo = "sugerencias"
-                st.rerun()
-        with rp_t2:
-            if st.button("Clasificaciones", use_container_width=True, key="tab_cla"):
-                st.session_state.copilot_tipo = "clasificaciones"
-                st.rerun()
-        with rp_t3:
-            if st.button("Definiciones", use_container_width=True, key="tab_def"):
-                st.session_state.copilot_tipo = "definiciones_tab"
-                st.rerun()
+                st.session_state.copilot_tipo = "sugerencias"; st.rerun()
+        with rt2:
+            if st.button("Clasif.", use_container_width=True, key="tab_cla"):
+                st.session_state.copilot_tipo = "clasificaciones"; st.rerun()
+        with rt3:
+            if st.button("Definic.", use_container_width=True, key="tab_def"):
+                st.session_state.copilot_tipo = "definiciones_tab"; st.rerun()
 
-        st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
-
-        # ── Close panel ──
         st.markdown('<div class="btn-ghost">', unsafe_allow_html=True)
         if st.button("✕ Cerrar panel", use_container_width=True, key="close_rp"):
-            st.session_state.right_open = False
-            st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
+            st.session_state.right_open = False; st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
         st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
 
-        # ── QA Score ──
-        qa = st.session_state.qa
-        score = qa.get("score",0)
-        sc = "#34C759" if score>=80 else "#FF9F0A" if score>=50 else "#FF453A"
+        # QA Score
+        qa    = st.session_state.qa
+        score = qa.get("score", 0)
+        sc    = "#34C759" if score >= 80 else "#E8B84B" if score >= 50 else "#FF453A"
+        secciones = qa.get("secciones",{"TÉCNICA":False,"HALLAZGOS":False,"IMPRESIÓN":False})
+        secs_html = "".join([
+            f'<div class="sec-row"><span class="{"sec-ok" if v else "sec-no"}">{"✓" if v else "✗"}</span><span class="sec-nm">{k}</span></div>'
+            for k,v in secciones.items()
+        ])
         st.markdown(f"""
-        <div class="qa-box">
-          <div style="display:flex;align-items:center;gap:12px">
+        <div class="qa-wrap">
+          <div style="display:flex;align-items:center;gap:14px">
             <div>
-              <div class="qa-score-num" style="color:{sc}">{score}</div>
+              <div class="qa-num" style="color:{sc}">{score}</div>
               <div class="qa-lbl">QA Score</div>
-              <div class="qa-track" style="width:52px">
-                <div class="qa-fill" style="width:{score}%;background:{sc}"></div>
-              </div>
+              <div class="qa-track" style="width:50px"><div class="qa-fill" style="width:{score}%;background:{sc}"></div></div>
             </div>
-            <div>
-              {''.join([
-                f'<div class="sec-row"><span class="{"sec-ok" if v else "sec-no"}">{"✓" if v else "✗"}</span><span class="sec-name">{k}</span></div>'
-                for k,v in qa.get("secciones",{"TÉCNICA":False,"HALLAZGOS":False,"IMPRESIÓN":False}).items()
-              ])}
-            </div>
+            <div>{secs_html}</div>
           </div>
         </div>
         """, unsafe_allow_html=True)
 
-        # ── Omisiones ──
+        # Omisiones
         omisiones = qa.get("omisiones",[])
         if omisiones:
             items_html = "".join([f'<div class="warn-item">· {o}</div>' for o in omisiones])
-            st.markdown(f'<div class="warn-box"><div class="warn-title">⚠ Omisiones anatómicas</div>{items_html}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="warn-box"><div class="warn-title">⚠ Omisiones</div>{items_html}</div>', unsafe_allow_html=True)
 
-        # ── Copilot result ──
+        # Copilot result
         if st.session_state.copilot_txt:
             tipo_lbl = {"differential":"Diagnóstico Diferencial","definiciones":"Definiciones & Clasificaciones","qa_full":"Auditoría QA"}.get(st.session_state.copilot_tipo,"Asistente AURA")
             st.markdown(f"""
-            <div class="copilot-box">
-                <div class="copilot-box-title">{tipo_lbl}</div>
-                <div class="copilot-text">{st.session_state.copilot_txt}</div>
-            </div>
-            """, unsafe_allow_html=True)
+            <div class="cp-box">
+                <div class="cp-label">{tipo_lbl}</div>
+                <div class="cp-text">{st.session_state.copilot_txt}</div>
+            </div>""", unsafe_allow_html=True)
             st.markdown('<div class="btn-ghost">', unsafe_allow_html=True)
-            if st.button("✕ Cerrar resultado", use_container_width=True, key="close_copilot"):
-                st.session_state.copilot_txt = ""
-                st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
+            if st.button("✕ Cerrar resultado", use_container_width=True, key="close_cp"):
+                st.session_state.copilot_txt = ""; st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
 
         # Sugerencias contextuales
         if not st.session_state.copilot_txt:
-            region_sel = st.session_state.region
-            clasif_region = KB_REGIONES.get(region_sel,{}).get("clasif",[])
+            clasif_region = KB_REGIONES.get(st.session_state.region,{}).get("clasif",[])
             if clasif_region:
-                st.markdown('<div style="font-size:10px;font-weight:700;color:#48484A;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Sugerencias contextuales</div>', unsafe_allow_html=True)
+                st.markdown('<div style="font-size:9px;font-weight:700;color:#3E3E44;text-transform:uppercase;letter-spacing:.07em;margin-bottom:7px">Sugerencias contextuales</div>', unsafe_allow_html=True)
                 for cn in clasif_region[:3]:
                     cd = KB_CLASIF.get(cn,{})
                     st.markdown(f"""
                     <div class="sug-card">
                         <div class="sug-tag">Clasificación sugerida</div>
-                        <div class="sug-title">{cn}</div>
+                        <div class="sug-name">{cn}</div>
                         <div class="sug-desc">{cd.get('desc','')}</div>
                         <div class="sug-action">Ver grados →</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    </div>""", unsafe_allow_html=True)
 
         with st.expander("REFERENCIA RÁPIDA", expanded=False):
             for cn in KB_REGIONES.get(st.session_state.region,{}).get("clasif",[]):
                 cd2 = KB_CLASIF.get(cn,{})
                 st.markdown(f"""
-                <div class="clasif-card">
-                    <div class="clasif-hdr">{cn}</div>
-                    <div class="clasif-body">
-                        {''.join([f'<div class="clasif-grade"><span class="grade-n">{g}</span><span>{desc}</span></div>' for g,desc in cd2.get("grados",{}).items()])}
+                <div class="cl-card">
+                    <div class="cl-hdr">{cn}</div>
+                    <div class="cl-body">
+                        {''.join([f'<div class="cl-row"><span class="cl-grade">{g}</span><span>{desc}</span></div>' for g,desc in cd2.get("grados",{}).items()])}
                     </div>
-                </div>
-                """, unsafe_allow_html=True)
+                </div>""", unsafe_allow_html=True)
 
         with st.expander("AUDITORÍA QA", expanded=False):
             if st.button("◈ Auditar informe", use_container_width=True, key="qa_full"):
@@ -1410,14 +1046,11 @@ if col_right:
                             st.session_state.copilot_txt  = res.choices[0].message.content
                             st.session_state.copilot_tipo = "qa_full"
                             st.rerun()
-                        except Exception as e:
-                            st.error(str(e))
+                        except Exception as e: st.error(str(e))
                 else:
                     st.warning("Genera un informe primero.")
 
 else:
-    # Panel cerrado — mostrar botón para reabrir
     st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
     if st.button("▶ Abrir panel IA", key="open_rp"):
-        st.session_state.right_open = True
-        st.rerun()
+        st.session_state.right_open = True; st.rerun()
