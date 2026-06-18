@@ -1,1056 +1,918 @@
-"""
-AURA v2 — Radiology Copilot
-Remasterized: 3-column layout, clean dark theme, inline rich editor with bg switcher.
-"""
-
 import streamlit as st
 import streamlit.components.v1 as components
-import speech_recognition as sr
-import io, re, json, datetime
-from openai import OpenAI
 from docx import Document
-from docx.shared import Pt
+from docx.shared import Pt, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+import speech_recognition as sr
+import io
+import json
+from openai import OpenAI
 
+# ==========================================
+# CONFIG
+# ==========================================
 st.set_page_config(
-    page_title="AURA · Radiology Copilot",
+    page_title="Beam AI | PACS Editor v3",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# ══════════════════════════════════════════════════════════════════
-# KNOWLEDGE BASE
-# ══════════════════════════════════════════════════════════════════
-KB_CLASIF = {
-    "Menisco · Stoller": {
-        "desc": "Clasificación RM de desgarro meniscal",
-        "grados": {"I":"Señal focal intrameniscal, no articular.","II":"Señal lineal, no alcanza superficie articular.","III":"Alcanza superficie articular → DESGARRO."},
-        "cmd": "/stoller",
-    },
-    "Cartílago · ICRS": {
-        "desc": "International Cartilage Repair Society",
-        "grados": {"I":"Fibrilación superficial, <50% grosor.","II":"Lesión hasta 50% grosor.","III":"Lesión >50%, sin exposición ósea.","IV":"Hueso subcondral expuesto."},
-        "cmd": "/icrs",
-    },
-    "Artrosis · Kellgren-Lawrence": {
-        "desc": "Clasificación radiográfica de osteoartrosis",
-        "grados": {"0":"Sin cambios.","I":"Osteofito posible.","II":"Osteofito definido.","III":"Pinzamiento moderado.","IV":"Pinzamiento grave + deformidad."},
-        "cmd": "/kl",
-    },
-    "LCA · Hope & Feagin": {
-        "desc": "Lesión de ligamento cruzado anterior en RM",
-        "grados": {"Parcial":"Fibras continuas, señal aumentada.","Completa":"Discontinuidad total.","Crónica":"Fibras atróficas."},
-        "cmd": "/lca",
-    },
-    "Disco · Pfirrmann": {
-        "desc": "Degeneración discal en columna",
-        "grados": {"I":"Núcleo brillante homogéneo.","II":"Señal ligeramente reducida.","III":"Señal gris, distinción borrosa.","IV":"Señal baja, altura reducida.","V":"Espacio discal colapsado."},
-        "cmd": "/pfirrmann",
-    },
-    "Modic": {
-        "desc": "Cambios en placa terminal vertebral",
-        "grados": {"I":"Edema/inflamación activa.","II":"Sustitución grasa.","III":"Esclerosis ósea."},
-        "cmd": "/modic",
-    },
-    "ACR TIRADS": {
-        "desc": "Nódulo tiroideo en ecografía",
-        "grados": {"1":"Normal.","2":"Benigno.","3":"Levemente sospechoso.","4":"Moderadamente sospechoso. BAAF ≥1.5cm.","5":"Altamente sospechoso. BAAF ≥1cm."},
-        "cmd": "/tirads",
-    },
-    "ACR BI-RADS": {
-        "desc": "Hallazgos mamarios",
-        "grados": {"0":"Evaluación incompleta.","1":"Negativo.","2":"Benigno.","3":"Probablemente benigno.","4":"Sospechoso — biopsia.","5":"Altamente maligno.","6":"Malignidad confirmada."},
-        "cmd": "/birads",
-    },
-    "LI-RADS": {
-        "desc": "Lesión hepática en paciente de alto riesgo",
-        "grados": {"LR-1":"Definitivamente benigno.","LR-2":"Probablemente benigno.","LR-3":"Indeterminado.","LR-4":"Probablemente HCC.","LR-5":"Definitivamente HCC.","LR-M":"Maligno, no específico."},
-        "cmd": "/lirads",
-    },
-    "Fleischner 2017": {
-        "desc": "Seguimiento de nódulos pulmonares",
-        "grados": {"<6mm bajo riesgo":"Sin seguimiento.","<6mm alto riesgo":"TC opcional 12m.","6-8mm":"TC 6-12m, luego 18-24m.",">8mm":"TC 3m / PET / biopsia.","Subsólido ≥6mm":"TC 6-12m para confirmar."},
-        "cmd": "/fleischner",
-    },
+# ==========================================
+# SUGERENCIAS POR MODALIDAD
+# ==========================================
+SUGERENCIAS = {
+    "Resonancia Magnética": [
+        "Stoller III → desgarro confirmado",
+        "Extrusión meniscal >3 mm",
+        "ICRS III → >50% grosor condral",
+        "Kellgren-Lawrence III gonartrosis",
+        "Edema óseo subcondral activo",
+        "Lesión LCA Hope & Feagin parcial",
+        "Pfirrmann IV discopatía",
+        "Contusión ósea por impacto",
+    ],
+    "Tomografía Computarizada": [
+        "Hounsfield: hueso ~700 UH",
+        "Adenopatía >1 cm eje corto",
+        "Nódulo Fleischner >6 mm sólido",
+        "WELLS alta probabilidad TEP",
+        "Murphy score apendicitis",
+        "ASPECTS ACV isquémico",
+    ],
+    "Radiografía": [
+        "Kellgren-Lawrence I-IV artrosis",
+        "Cobb >10° escoliosis",
+        "Índice cardiotorácico >0.5",
+        "Radiopacidad lobar consolidación",
+        "Línea pleural neumotórax",
+    ],
+    "Ultrasonido": [
+        "TIRADS 4 → considerar BAAF",
+        "BI-RADS 4B → biopsia indicada",
+        "Resistividad >0.7 sospecha maligna",
+        "Murphy positivo colecistitis",
+        "McBurney dolor apendicitis",
+    ],
+    "PET-CT": [
+        "SUVmax >2.5 actividad metabólica",
+        "LI-RADS 5 → HCC definitivo",
+        "Captación focal vs difusa",
+        "Respuesta PERCIST criterios",
+    ],
 }
 
-KB_REGIONES = {
-    "Rodilla":          {"clasif":["Menisco · Stoller","Cartílago · ICRS","Artrosis · Kellgren-Lawrence","LCA · Hope & Feagin"],"omisiones":["menisco medial","menisco lateral","LCA","cartílago"]},
-    "Columna lumbar":   {"clasif":["Disco · Pfirrmann","Modic"],"omisiones":["discos","canal espinal","foramina"]},
-    "Columna cervical": {"clasif":["Disco · Pfirrmann","Modic"],"omisiones":["discos","médula","canal"]},
-    "Hombro":           {"clasif":["Cartílago · ICRS"],"omisiones":["supraespinoso","infraespinoso","bursa","labrum"]},
-    "Cadera":           {"clasif":["Cartílago · ICRS","Artrosis · Kellgren-Lawrence"],"omisiones":["labrum","cartílago","espacio articular"]},
-    "Tobillo / Pie":    {"clasif":["Cartílago · ICRS"],"omisiones":["Aquiles","ligamentos laterales","cartílago talar"]},
-    "Cerebro":          {"clasif":[],"omisiones":["parénquima","ventrículos","línea media","sustancia blanca"]},
-    "Tórax":            {"clasif":["Fleischner 2017"],"omisiones":["parénquima","pleuras","mediastino"]},
-    "Abdomen / Pelvis": {"clasif":["LI-RADS"],"omisiones":["hígado","riñones","páncreas","aorta"]},
-    "Mama":             {"clasif":["ACR BI-RADS"],"omisiones":["composición","BI-RADS","ganglios axilares"]},
-    "Tiroides":         {"clasif":["ACR TIRADS"],"omisiones":["TIRADS","adenopatías"]},
-    "Muñeca / Mano":    {"clasif":["Cartílago · ICRS"],"omisiones":["TFCC","tendones"]},
+CLASIFICACIONES = {
+    "Menisco · Stoller": [
+        ("I", "Señal focal intrameniscal"),
+        ("II", "Señal lineal, no articular"),
+        ("III", "Alcanza superficie → desgarro"),
+    ],
+    "Cartílago · ICRS": [
+        ("I", "Fibrilación superficial"),
+        ("II", "<50% grosor"),
+        ("III", ">50% grosor"),
+        ("IV", "Hueso subcondral expuesto"),
+    ],
+    "Artrosis · Kellgren-Lawrence": [
+        ("I", "Posible osteofito"),
+        ("II", "Osteofito definido"),
+        ("III", "Pinzamiento moderado"),
+        ("IV", "Pinzamiento grave"),
+    ],
+    "LCA · Hope & Feagin": [
+        ("Parcial", "Fibras continuas, señal ↑"),
+        ("Completa", "Discontinuidad total"),
+        ("Crónica", "Fibras atróficas"),
+    ],
+    "Columna · Pfirrmann": [
+        ("I", "Núcleo brillante homogéneo"),
+        ("II", "Señal alta, zona no clara"),
+        ("III", "Señal gris, distinción borrosa"),
+        ("IV", "Señal baja, sin distinción"),
+        ("V", "Sin espacio discal"),
+    ],
+    "TIRADS · ACR": [
+        ("2", "No sospechoso"),
+        ("3", "Levemente sospechoso"),
+        ("4", "Moderadamente sospechoso"),
+        ("5", "Altamente sospechoso"),
+    ],
+    "BI-RADS · ACR": [
+        ("2", "Benigno"),
+        ("3", "Probablemente benigno"),
+        ("4A/4B/4C", "Sospechoso — biopsia"),
+        ("5", "Altamente maligno"),
+    ],
 }
 
-MODALIDADES = ["Resonancia Magnética","Tomografía Computarizada","Radiografía","Ultrasonido","PET-CT","Intervencionismo"]
-REGIONES    = sorted(KB_REGIONES.keys())
+REGIONES = [
+    "Rodilla", "Columna lumbar", "Columna cervical", "Hombro",
+    "Cadera", "Tobillo / Pie", "Muñeca / Mano", "Codo",
+    "Cerebro", "Columna dorsal", "Tórax", "Abdomen / Pelvis",
+    "Mama", "Tiroides", "Hígado",
+]
 
-# ══════════════════════════════════════════════════════════════════
-# SESSION STATE
-# ══════════════════════════════════════════════════════════════════
-_D = {
-    "dictado":"","reporte_html":"","reporte_texto":"",
-    "copilot_txt":"","copilot_tipo":"",
-    "historial":[],"estilo_ejemplos":[],"estilo_pref":"",
-    "clasif_activas":{},"api_key":"","proveedor":"deepseek",
-    "modalidad":"Tomografía Computarizada","region":"Abdomen / Pelvis",
-    "instrucciones":"Lenguaje médico experto en español de México. Impresión diagnóstica concluyente.",
-    "estudio_id":f"EST-{datetime.datetime.now().strftime('%Y%m%d-%H%M')}",
-    "plantilla_txt":"","qa":{},"right_open":True,
-    "ai_toggle":True,
-    "editor_bg": "dark",
-}
-for k,v in _D.items():
+# ==========================================
+# ESTADO
+# ==========================================
+for k, v in {
+    "dictado": "",
+    "reporte_html": "",
+    "reporte_texto": "",
+    "clasif_activas": {},
+    "definiciones_resultado": "",
+}.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-# ══════════════════════════════════════════════════════════════════
+# ==========================================
 # HELPERS
-# ══════════════════════════════════════════════════════════════════
-def get_client():
-    key = st.session_state.api_key
-    try:
-        if not key: key = st.secrets.get("deepseek_key","") or st.secrets.get("openai_key","")
-    except: pass
-    if not key: return None, None
-    p = st.session_state.proveedor
-    if p == "openai_mini": return OpenAI(api_key=key), "gpt-4o-mini"
-    if p == "openai_4":    return OpenAI(api_key=key), "gpt-4.1-mini"
-    return OpenAI(api_key=key, base_url="https://api.deepseek.com"), "deepseek-chat"
+# ==========================================
+def leer_plantilla(file):
+    doc = Document(file)
+    return "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
 
-def transcribir(audio):
-    r = sr.Recognizer()
-    try:
-        with sr.AudioFile(audio) as s:
-            return r.recognize_google(r.record(s), language="es-MX")
-    except: return ""
-
-def leer_plantilla(f):
-    doc = Document(f)
-    return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
-
-def texto_a_html(txt):
-    lines = []
-    for line in txt.split("\n"):
-        s = line.strip()
-        if not s: lines.append("<br>")
-        elif s.isupper() and len(s) < 80 and not s.startswith("•"):
-            lines.append(f'<h3 class="sec">{s}</h3>')
-        elif s.startswith("•") or s.startswith("-"):
-            lines.append(f"<li>{s[1:].strip()}</li>")
-        else:
-            lines.append(f"<p>{s}</p>")
-    return "\n".join(lines)
-
-def calcular_qa(texto, region):
-    up    = texto.upper()
-    secs  = {s: s in up for s in ["TÉCNICA","HALLAZGOS","IMPRESIÓN"]}
-    words = len(texto.split())
-    omis  = [e for e in KB_REGIONES.get(region,{}).get("omisiones",[]) if e.lower() not in texto.lower()]
-    found = sum(secs.values())
-    score = min(100, int((found/3)*40 + min(words/200,1)*35 + (found==3)*25))
-    return {"score":score,"secciones":secs,"omisiones":omis}
-
-def build_system_prompt():
-    r = st.session_state.region
-    m = st.session_state.modalidad
-    clasif_info = ""
-    for c in KB_REGIONES.get(r,{}).get("clasif",[]):
-        d = KB_CLASIF.get(c,{})
-        clasif_info += f"\n{c}: {d.get('desc','')}\n"
-        for g, desc in d.get("grados",{}).items():
-            clasif_info += f"  Gr.{g}: {desc}\n"
-    clasif_activas = ""
-    if st.session_state.clasif_activas:
-        clasif_activas = "\nCLASIFICACIONES DEL CASO:\n"
-        for k, v in st.session_state.clasif_activas.items():
-            clasif_activas += f"• {k}: Grado {v}\n"
-    estilo = ""
-    if st.session_state.estilo_ejemplos:
-        estilo = "\nESTILO DEL RADIÓLOGO:\n" + "".join(f"Ejemplo:\n{e[:500]}\n" for e in st.session_state.estilo_ejemplos[-3:])
-    if st.session_state.estilo_pref:
-        estilo += f"\nPreferencias: {st.session_state.estilo_pref}"
-    return f"""Eres AURA, copiloto de redacción radiológica de nivel experto.
-MODALIDAD: {m} | REGIÓN: {r}
-CLASIFICACIONES:{clasif_info}{clasif_activas}{estilo}
-DIRECTRICES: {st.session_state.instrucciones}
-PLANTILLA: {st.session_state.plantilla_txt or "TÉCNICA / HALLAZGOS / IMPRESIÓN DIAGNÓSTICA"}
-REGLAS: Títulos en MAYÚSCULAS, sin asteriscos, redacción narrativa en hallazgos, impresión con viñetas "•", español de México."""
-
-def generar_docx(html_txt, plain_txt):
+def generar_docx(html_texto):
+    """Convierte HTML básico a DOCX con estilos."""
     from html.parser import HTMLParser
-    class P(HTMLParser):
+
+    class HTMLtoDocx(HTMLParser):
         def __init__(self):
             super().__init__()
             self.doc = Document()
-            st2 = self.doc.styles["Normal"]
-            st2.font.name = "Arial"
-            st2.font.size = Pt(11)
-            self.bold = self.italic = self.ul = False
-            self.para = None
+            style = self.doc.styles["Normal"]
+            style.font.name = "Arial"
+            style.font.size = Pt(11)
+            self.bold = False
+            self.italic = False
+            self.underline = False
+            self.current_para = None
+            self.in_li = False
+
         def handle_starttag(self, tag, attrs):
-            if tag in ("b","strong"):   self.bold   = True
-            elif tag in ("i","em"):     self.italic = True
-            elif tag == "u":            self.ul     = True
-            elif tag in ("p","div","h3"): self.para = self.doc.add_paragraph()
-            elif tag == "li":           self.para   = self.doc.add_paragraph(style="List Bullet")
+            if tag in ("b", "strong"):
+                self.bold = True
+            elif tag in ("i", "em"):
+                self.italic = True
+            elif tag == "u":
+                self.underline = True
             elif tag == "br":
-                if not self.para: self.para = self.doc.add_paragraph()
+                if self.current_para is None:
+                    self.current_para = self.doc.add_paragraph()
+            elif tag in ("p", "div"):
+                self.current_para = self.doc.add_paragraph()
+            elif tag == "li":
+                self.current_para = self.doc.add_paragraph(style="List Bullet")
+                self.in_li = True
+            elif tag == "hr":
+                p = self.doc.add_paragraph()
+                p.paragraph_format.space_after = Pt(6)
+
         def handle_endtag(self, tag):
-            if tag in ("b","strong"):   self.bold   = False
-            elif tag in ("i","em"):     self.italic = False
-            elif tag == "u":            self.ul     = False
+            if tag in ("b", "strong"):
+                self.bold = False
+            elif tag in ("i", "em"):
+                self.italic = False
+            elif tag == "u":
+                self.underline = False
+            elif tag == "li":
+                self.in_li = False
+                self.current_para = None
+
         def handle_data(self, data):
-            t = data.strip()
-            if not t: return
-            if not self.para: self.para = self.doc.add_paragraph()
-            run = self.para.add_run(t + " ")
-            run.bold = self.bold; run.italic = self.italic; run.underline = self.ul
-    p = P()
+            text = data.strip()
+            if not text:
+                return
+            if self.current_para is None:
+                self.current_para = self.doc.add_paragraph()
+            run = self.current_para.add_run(text + " ")
+            run.bold = self.bold
+            run.italic = self.italic
+            run.underline = self.underline
+
+    import re
+    # Limpiar y normalizar HTML básico
+    clean = html_texto.replace("\n", " ").strip()
+    parser = HTMLtoDocx()
     try:
-        p.feed((html_txt or plain_txt).replace("\n"," "))
-    except:
-        d = Document()
-        for line in re.sub(r"<[^>]+>","",plain_txt).split("\n"): d.add_paragraph(line)
-        bio = io.BytesIO(); d.save(bio); return bio.getvalue()
-    bio = io.BytesIO(); p.doc.save(bio); return bio.getvalue()
+        parser.feed(clean)
+    except Exception:
+        # Fallback: texto plano
+        doc = Document()
+        import re as _re
+        plain = _re.sub(r"<[^>]+>", "", html_texto)
+        for line in plain.split("\n"):
+            doc.add_paragraph(line)
+        bio = io.BytesIO()
+        doc.save(bio)
+        return bio.getvalue()
 
-# ══════════════════════════════════════════════════════════════════
-# DEFAULT EDITOR CONTENT
-# ══════════════════════════════════════════════════════════════════
-DEFAULT_CONTENT = """<h3 class="sec">HALLAZGOS</h3>
-<p><strong>Hígado:</strong> De tamaño, forma y contornos normales, con atenuación homogénea. No se identifican lesiones focales. Vía biliar intra y extrahepática no dilatada.</p>
-<p><strong>Vesícula biliar:</strong> De paredes delgadas, sin litiasis radiopacas.</p>
-<p><strong>Páncreas:</strong> De aspecto normal, sin lesiones focales ni dilatación del conducto pancreático.</p>
-<p><strong>Bazo:</strong> De tamaño normal, con atenuación homogénea, sin lesiones focales.</p>
-<p><strong>Riñones:</strong> De tamaño y morfología conservada, con adecuada captación y eliminación del contraste. No se observan litiasis ni hidronefrosis.</p>
-<p><strong>Estómago e intestino:</strong> Asas intestinales permeables, sin dilatación ni engrosamiento parietal.</p>
-<p>No se identifica líquido libre intraabdominal ni colecciones.</p>
-<h3 class="sec">CONCLUSIÓN</h3>
-<li>Estudio sin hallazgos tomográficos sugestivos de patología abdominal o pélvica aguda.</li>
-<li>Hallazgos descritos.</li>"""
+    bio = io.BytesIO()
+    parser.doc.save(bio)
+    return bio.getvalue()
 
-# ══════════════════════════════════════════════════════════════════
-# GLOBAL CSS
-# ══════════════════════════════════════════════════════════════════
+def transcribir_voz(audio_file):
+    r = sr.Recognizer()
+    with sr.AudioFile(audio_file) as source:
+        try:
+            return r.recognize_google(r.record(source), language="es-MX")
+        except Exception:
+            return ""
+
+def calcular_completitud(texto):
+    secciones = ["TÉCNICA", "HALLAZGOS", "IMPRESIÓN"]
+    encontradas = sum(1 for s in secciones if s in texto.upper())
+    palabras = len(texto.split())
+    return min(100, int((encontradas / 3) * 60 + min(palabras / 150, 1) * 40))
+
+# ==========================================
+# API KEY
+# ==========================================
+try:
+    api_key = st.secrets["deepseek_key"]
+except Exception:
+    api_key = ""
+
+# ==========================================
+# CSS GLOBAL
+# ==========================================
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@700&display=swap');
 
-*, *::before, *::after { box-sizing: border-box; }
-html, body, .stApp {
-    background: #111112 !important;
-    font-family: 'Inter', sans-serif !important;
-    color: #E2E2E7 !important;
-    margin: 0; padding: 0;
-}
+html, .stApp { background: #070a10 !important; }
 .block-container { padding: 0 !important; max-width: 100% !important; }
-header, footer, [data-testid="stToolbar"],
-[data-testid="stDecoration"], [data-testid="stStatusWidget"] { display: none !important; }
-section[data-testid="stSidebar"] { display: none !important; }
-[data-testid="stHorizontalBlock"] { gap: 0 !important; align-items: stretch !important; }
-[data-testid="column"] { padding: 0 !important; }
+header, footer { display: none !important; }
+[data-testid="stToolbar"] { display: none !important; }
 
-/* widgets */
-.stTextArea textarea {
-    background: #1E1E20 !important; border: 1px solid #2E2E32 !important;
-    border-radius: 8px !important; color: #E2E2E7 !important;
-    font-family: 'Inter', sans-serif !important; font-size: 13px !important;
-    line-height: 1.65 !important; resize: none !important;
+/* TOPBAR */
+.beam-topbar {
+    background: #0b0f1a;
+    border-bottom: 1px solid #1a2333;
+    padding: 10px 24px;
+    display: flex; align-items: center; gap: 16px;
+    position: sticky; top: 0; z-index: 9999;
 }
-.stTextArea textarea:focus { border-color: #E8B84B !important; box-shadow: 0 0 0 3px rgba(232,184,75,.1) !important; }
+.beam-logo {
+    font-family: 'Syne', sans-serif; font-weight: 700; font-size: 15px;
+    color: #e2edf8; letter-spacing: .1em; display: flex; align-items: center; gap: 8px;
+}
+.ldot { width: 8px; height: 8px; border-radius: 50%; background: #3b8bd4; display: inline-block; }
+.tbadge {
+    font-size: 11px; color: #4a9ed4; background: #0d1e30;
+    border: 1px solid #1a3a58; border-radius: 4px; padding: 2px 10px;
+    font-family: 'IBM Plex Mono', monospace;
+}
+.tstat {
+    margin-left: auto; font-size: 11px; color: #2a5a3a;
+    font-family: 'IBM Plex Mono', monospace; display: flex; align-items: center; gap: 6px;
+}
+.sdot { width: 6px; height: 6px; border-radius: 50%; background: #2ecc71; display: inline-block; }
+
+/* PANEL LABELS */
+.plabel {
+    font-size: 9px !important; letter-spacing: .2em !important; color: #2a4a6a !important;
+    text-transform: uppercase !important; font-family: 'IBM Plex Mono', monospace !important;
+    margin-bottom: 3px !important; margin-top: 0 !important; display: block;
+}
+
+/* INPUTS */
 [data-testid="stSelectbox"] > div > div {
-    background: #1E1E20 !important; border: 1px solid #2E2E32 !important;
-    border-radius: 8px !important; color: #E2E2E7 !important; font-size: 12px !important;
+    background: #0f1520 !important; border: 1px solid #1a2f48 !important;
+    border-radius: 6px !important; color: #7ab0cc !important;
+    font-family: 'IBM Plex Mono', monospace !important; font-size: 12px !important;
 }
-[data-testid="stTextInput"] input {
-    background: #1E1E20 !important; border: 1px solid #2E2E32 !important;
-    border-radius: 8px !important; color: #E2E2E7 !important; font-size: 12px !important;
+[data-testid="stSelectbox"] > div > div:hover { border-color: #2a5a8a !important; }
+
+.stTextArea textarea {
+    background: #0f1520 !important; border: 1px solid #1a2f48 !important;
+    border-radius: 7px !important; color: #b8d0e8 !important;
+    font-family: 'IBM Plex Mono', monospace !important; font-size: 11px !important; line-height: 1.6 !important;
 }
-[data-testid="stAudioInput"] { background: #1E1E20 !important; border: 1px solid #2E2E32 !important; border-radius: 10px !important; }
-[data-testid="stFileUploader"] { background: #1E1E20 !important; border: 1px dashed #2E2E32 !important; border-radius: 8px !important; }
-[data-testid="stFileUploader"] * { color: #505055 !important; font-size: 11px !important; }
-[data-testid="stRadio"] > div { gap: 4px !important; }
-[data-testid="stRadio"] label {
-    background: #1E1E20 !important; border: 1px solid #2E2E32 !important;
-    border-radius: 6px !important; padding: 4px 10px !important;
-    font-size: 11px !important; color: #6E6E78 !important;
-}
-[data-testid="stRadio"] label:has(input:checked) {
-    border-color: #E8B84B !important; color: #E8B84B !important;
-    background: rgba(232,184,75,.08) !important;
+.stTextArea textarea:focus { border-color: #2a5580 !important; box-shadow: none !important; }
+
+[data-testid="stAudioInput"] {
+    background: #0f1a28 !important; border: 1px solid #1a3a58 !important; border-radius: 8px !important;
 }
 
-/* buttons */
+[data-testid="stFileUploader"] {
+    background: #0f1520 !important; border: 1px dashed #1d3550 !important; border-radius: 8px !important;
+}
+[data-testid="stFileUploader"] * {
+    color: #3d6090 !important; font-family: 'IBM Plex Mono', monospace !important; font-size: 11px !important;
+}
+[data-testid="stFileUploader"]:hover { border-color: #2a5a8a !important; }
+
+/* BOTÓN PRINCIPAL */
+.btn-main > div > button {
+    background: #1a3a60 !important; border: 1px solid #2a5a90 !important;
+    color: #7ac2f0 !important; font-family: 'Syne', sans-serif !important;
+    font-weight: 700 !important; font-size: 13px !important; letter-spacing: .06em !important;
+    border-radius: 8px !important; padding: .75rem 1rem !important; width: 100% !important;
+    transition: all .2s !important;
+}
+.btn-main > div > button:hover { background: #1f4878 !important; border-color: #3a78c0 !important; }
+
+/* BOTONES SECUNDARIOS */
 .stButton > button {
-    background: #1E1E20 !important; border: 1px solid #2E2E32 !important;
-    color: #9E9EA8 !important; font-family: 'Inter', sans-serif !important;
-    font-size: 12px !important; font-weight: 500 !important;
-    border-radius: 8px !important; padding: 6px 14px !important;
-    transition: all .15s !important; white-space: nowrap !important;
+    background: #0d1828 !important; border: 1px solid #1a3050 !important;
+    color: #3a6a9f !important; font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 11px !important; border-radius: 6px !important; transition: all .15s !important;
 }
-.stButton > button:hover { background: #2A2A2E !important; color: #E2E2E7 !important; border-color: #3E3E44 !important; }
+.stButton > button:hover { background: #102030 !important; border-color: #2a5a8a !important; color: #7ac2f0 !important; }
 
-.btn-accent .stButton > button {
-    background: #E8B84B !important; border: none !important;
-    color: #111112 !important; font-weight: 700 !important;
-    font-size: 13px !important; border-radius: 10px !important; padding: 12px !important;
-    letter-spacing: .01em !important;
+/* EXPANDER */
+[data-testid="stExpander"] {
+    background: #0b0f1a !important; border: 1px solid #1a2840 !important;
+    border-radius: 7px !important; margin-bottom: 3px !important;
 }
-.btn-accent .stButton > button:hover { background: #F5C862 !important; box-shadow: 0 4px 16px rgba(232,184,75,.3) !important; }
-
-.btn-solid .stButton > button {
-    background: #2A2A2E !important; border: none !important;
-    color: #E2E2E7 !important; font-weight: 600 !important;
-    font-size: 12px !important; border-radius: 10px !important; padding: 10px !important;
+[data-testid="stExpander"] summary {
+    color: #3a6a9f !important; font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 11px !important; letter-spacing: .06em !important;
 }
-.btn-solid .stButton > button:hover { background: #363639 !important; }
+[data-testid="stExpander"] summary:hover { color: #7ac2f0 !important; }
+[data-testid="stExpander"] summary svg { color: #2a4a6a !important; }
 
-.btn-primary .stButton > button {
-    background: #E8B84B !important; border: none !important;
-    color: #111112 !important; font-weight: 700 !important; border-radius: 8px !important;
-}
-.btn-primary .stButton > button:hover { background: #F5C862 !important; }
-
-.btn-ghost .stButton > button {
-    background: transparent !important; border: 1px solid transparent !important;
-    color: #505055 !important; padding: 4px 8px !important;
-}
-.btn-ghost .stButton > button:hover { background: #1E1E20 !important; color: #9E9EA8 !important; }
-
+/* DOWNLOAD BUTTON */
 [data-testid="stDownloadButton"] > button {
-    background: #1E1E20 !important; border: 1px solid #2E2E32 !important;
-    color: #9E9EA8 !important; font-size: 12px !important; border-radius: 8px !important;
+    background: #0d1a28 !important; border: 1px solid #1a3a58 !important;
+    color: #3a8abf !important; font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 11px !important; border-radius: 6px !important;
 }
-[data-testid="stDownloadButton"] > button:hover { border-color: #E8B84B !important; color: #E8B84B !important; }
+[data-testid="stDownloadButton"] > button:hover { background: #102030 !important; color: #7ac2f0 !important; }
 
-/* expander */
-[data-testid="stExpander"] { background: transparent !important; border: none !important; border-bottom: 1px solid #1E1E20 !important; border-radius: 0 !important; margin: 0 !important; }
-[data-testid="stExpander"] summary { color: #505055 !important; font-size: 10px !important; font-weight: 700 !important; letter-spacing: .07em !important; text-transform: uppercase !important; padding: 10px 0 !important; }
-[data-testid="stExpander"] summary:hover { color: #9E9EA8 !important; }
-[data-testid="stExpander"] > div > div { padding: 4px 0 10px !important; }
+/* CHIPS */
+.sug-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
+.sug-chip {
+    font-size: 10px; font-family: 'IBM Plex Mono', monospace;
+    color: #3a7aaf; background: #0a1828; border: 1px solid #152a40;
+    padding: 3px 9px; border-radius: 4px; display: inline-block;
+}
 
-/* scrollbar */
-::-webkit-scrollbar { width: 3px; height: 3px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #2E2E32; border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: #3E3E44; }
+/* BARRA DE COMPLETITUD */
+.cbar-wrap { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.cbar-bg { flex: 1; height: 3px; background: #0f1828; border-radius: 2px; overflow: hidden; }
+.cbar-fill { height: 100%; background: #1a4a80; border-radius: 2px; transition: width .4s; }
+.cpct { font-size: 10px; color: #2a5a9a; font-family: 'IBM Plex Mono', monospace; }
 
-hr { border-color: #1E1E20 !important; margin: 6px 0 !important; }
+/* SCROLL */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: #070a10; }
+::-webkit-scrollbar-thumb { background: #1a2f48; border-radius: 2px; }
 
-.lbl { font-size: 10px; font-weight: 700; color: #505055; text-transform: uppercase; letter-spacing: .07em; display: block; margin-bottom: 4px; margin-top: 10px; }
-
-/* LEFT PANEL */
-.lp { background: #0D0D0F; border-right: 1px solid #1E1E20; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-.lp-head { padding: 16px 14px 12px; border-bottom: 1px solid #1E1E20; display: flex; align-items: center; justify-content: space-between; }
-.lp-logo { display: flex; align-items: center; gap: 9px; }
-.logo-mark { width: 28px; height: 28px; background: #E8B84B; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; color: #111112; letter-spacing: -.02em; }
-.logo-name { font-size: 15px; font-weight: 700; color: #E2E2E7; letter-spacing: -.02em; }
-.logo-sub { font-size: 10px; color: #505055; font-weight: 500; margin-top: 1px; }
-.lp-section { font-size: 9px; font-weight: 700; color: #3E3E44; letter-spacing: .1em; text-transform: uppercase; padding: 14px 14px 5px; }
-.lp-body { flex: 1; overflow-y: auto; }
-.lp-foot { padding: 10px 14px 14px; border-top: 1px solid #1E1E20; }
-.hist-item { padding: 8px 14px; cursor: pointer; transition: background .1s; border-left: 2px solid transparent; }
-.hist-item:hover { background: #141416; border-left-color: #E8B84B; }
-.hi-title { font-size: 12px; font-weight: 600; color: #AEAEB8; line-height: 1.3; }
-.hi-meta { font-size: 10px; color: #3E3E44; margin-top: 1px; font-family: 'JetBrains Mono', monospace; }
-.hi-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 9px; font-weight: 700; margin-top: 3px; }
-.badge-ok { background: rgba(52,199,89,.1); color: #34C759; }
-.badge-warn { background: rgba(232,184,75,.12); color: #E8B84B; }
-
-/* CENTER TOPBAR */
-.topbar { background: #111112; border-bottom: 1px solid #1E1E20; height: 48px; padding: 0 16px; display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 200; }
-.tb-chip { background: #1E1E20; border: 1px solid #2E2E32; border-radius: 7px; color: #9E9EA8; font-size: 11px; font-weight: 500; padding: 5px 12px; display: flex; align-items: center; gap: 6px; cursor: pointer; transition: all .12s; white-space: nowrap; font-family: 'Inter', sans-serif; }
-.tb-chip:hover { background: #2A2A2E; color: #E2E2E7; }
-.tb-sep { width: 1px; height: 18px; background: #1E1E20; flex-shrink: 0; }
-.tb-user { background: #1E1E20; border: 1px solid #2E2E32; border-radius: 7px; color: #AEAEB8; font-size: 11px; font-weight: 500; padding: 5px 10px; display: flex; align-items: center; gap: 7px; font-family: 'Inter', sans-serif; }
-.tb-avatar { width: 20px; height: 20px; border-radius: 50%; background: linear-gradient(135deg,#E8B84B,#F5A623); display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 800; color: #111112; }
-.tb-title { font-size: 12px; font-weight: 600; color: #6E6E78; font-family: 'JetBrains Mono', monospace; }
-
-/* RIGHT PANEL */
-.rp { background: #0D0D0F; border-left: 1px solid #1E1E20; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-.rp-head { padding: 14px 14px 10px; border-bottom: 1px solid #1E1E20; display: flex; align-items: center; justify-content: space-between; }
-.rp-title { font-size: 12px; font-weight: 700; color: #E2E2E7; letter-spacing: -.01em; }
-.rp-body { flex: 1; overflow-y: auto; padding: 12px; }
-
-/* QA */
-.qa-wrap { background: #141416; border: 1px solid #1E1E20; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
-.qa-num { font-size: 30px; font-weight: 700; line-height: 1; }
-.qa-lbl { font-size: 9px; font-weight: 700; color: #3E3E44; text-transform: uppercase; letter-spacing: .09em; margin-top: 2px; }
-.qa-track { height: 3px; background: #1E1E20; border-radius: 2px; margin-top: 8px; overflow: hidden; }
-.qa-fill { height: 100%; border-radius: 2px; transition: width .5s; }
-.sec-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
-.sec-ok { color: #34C759; font-size: 11px; }
-.sec-no { color: #FF453A; font-size: 11px; }
-.sec-nm { font-size: 11px; color: #6E6E78; font-weight: 500; }
-
-/* WARN */
-.warn-box { background: rgba(232,184,75,.05); border: 1px solid rgba(232,184,75,.15); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
-.warn-title { font-size: 10px; font-weight: 700; color: #E8B84B; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 5px; }
-.warn-item { font-size: 11px; color: #6E6E78; margin-bottom: 2px; }
-
-/* COPILOT RESULT */
-.cp-box { background: #141416; border: 1px solid #1E1E20; border-radius: 10px; padding: 14px; margin-bottom: 10px; }
-.cp-label { font-size: 10px; font-weight: 700; color: #E8B84B; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
-.cp-label::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: #E8B84B; display: inline-block; }
-.cp-text { font-size: 11px; color: #9E9EA8; line-height: 1.8; white-space: pre-wrap; font-family: 'Inter', sans-serif; }
-
-/* CLASIF CARDS */
-.cl-card { border: 1px solid #1E1E20; border-radius: 8px; margin-bottom: 7px; overflow: hidden; }
-.cl-hdr { padding: 7px 10px; background: #141416; font-size: 11px; font-weight: 600; color: #AEAEB8; border-bottom: 1px solid #1E1E20; }
-.cl-body { padding: 8px 10px; }
-.cl-row { display: flex; gap: 8px; padding: 3px 0; border-bottom: 1px solid #111112; font-size: 11px; color: #6E6E78; }
-.cl-row:last-child { border-bottom: none; }
-.cl-grade { min-width: 26px; font-weight: 700; color: #E8B84B; font-family: 'JetBrains Mono', monospace; font-size: 10px; padding-top: 1px; }
-
-/* SUGGEST */
-.sug-card { border: 1px solid #1E1E20; border-radius: 8px; padding: 10px 12px; margin-bottom: 7px; background: #141416; transition: border-color .12s; }
-.sug-card:hover { border-color: #2E2E32; }
-.sug-tag { font-size: 9px; font-weight: 700; color: #3E3E44; text-transform: uppercase; letter-spacing: .07em; }
-.sug-name { font-size: 12px; font-weight: 600; color: #AEAEB8; margin: 3px 0; }
-.sug-desc { font-size: 11px; color: #505055; }
-.sug-action { font-size: 10px; color: #E8B84B; margin-top: 5px; cursor: pointer; }
-
-/* ACTION CHIPS */
-.action-bar { display: flex; gap: 6px; padding: 0 0 8px; flex-wrap: wrap; }
-.a-chip { display: inline-flex; align-items: center; gap: 5px; padding: 5px 13px; border-radius: 20px; font-size: 11px; font-weight: 500; cursor: pointer; border: 1px solid #2E2E32; background: #1E1E20; color: #6E6E78; transition: all .12s; white-space: nowrap; font-family: 'Inter', sans-serif; }
-.a-chip:hover { border-color: #E8B84B; color: #E8B84B; }
-.a-chip.prime { background: #E8B84B; border-color: #E8B84B; color: #111112; font-weight: 700; }
-.a-chip.prime:hover { background: #F5C862; box-shadow: 0 4px 12px rgba(232,184,75,.25); }
-
-/* ID PILL */
-.id-pill { font-size: 10px; font-family: 'JetBrains Mono', monospace; color: #3E3E44; background: #1E1E20; border: 1px solid #2E2E32; border-radius: 5px; padding: 3px 8px; }
+hr { border-color: #111a28 !important; margin: 8px 0 !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# ══════════════════════════════════════════════════════════════════
+# ==========================================
+# TOPBAR
+# ==========================================
+st.markdown("""
+<div class="beam-topbar">
+    <div class="beam-logo"><span class="ldot"></span> BEAM AI</div>
+    <span class="tbadge">v3.0 · PACS Editor · MSK / Neuro / TX</span>
+    <div class="tstat"><span class="sdot"></span> DeepSeek · activo</div>
+</div>
+""", unsafe_allow_html=True)
+
+# ==========================================
 # LAYOUT
-# ══════════════════════════════════════════════════════════════════
-rp_open = st.session_state.right_open
-if rp_open:
-    col_left, col_main, col_right = st.columns([1.05, 3.5, 1.45], gap="small")
-else:
-    col_left, col_main = st.columns([1.05, 4.95], gap="small")
-    col_right = None
+# ==========================================
+col_izq, col_centro = st.columns([1, 2.6], gap="small")
 
-# ══════════════════════════════════════════════════════════════════
-# LEFT PANEL
-# ══════════════════════════════════════════════════════════════════
-with col_left:
-    st.markdown("""
-    <div class="lp-head">
-      <div class="lp-logo">
-        <div class="logo-mark">A</div>
-        <div><div class="logo-name">AURA</div><div class="logo-sub">Radiology Copilot</div></div>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("<div style='padding:10px 10px 0'>", unsafe_allow_html=True)
-    st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
-    if st.button("＋  Nuevo informe", use_container_width=True, key="btn_nuevo"):
-        st.session_state.reporte_html  = ""
-        st.session_state.reporte_texto = ""
-        st.session_state.dictado       = ""
-        st.session_state.clasif_activas= {}
-        st.session_state.qa            = {}
-        st.session_state.copilot_txt   = ""
-        st.session_state.estudio_id    = f"EST-{datetime.datetime.now().strftime('%Y%m%d-%H%M')}"
-        st.rerun()
-    st.markdown('</div></div>', unsafe_allow_html=True)
-
-    st.markdown('<div class="lp-section">Estudios recientes</div>', unsafe_allow_html=True)
-    if st.session_state.historial:
-        for i, h in enumerate(reversed(st.session_state.historial[-7:])):
-            ms = {"Resonancia Magnética":"RM","Tomografía Computarizada":"TC","Radiografía":"Rx","Ultrasonido":"US","PET-CT":"PET"}.get(h.get("modalidad",""),"?")
-            sc = h.get("score",0)
-            badge_cls = "badge-ok" if sc >= 70 else "badge-warn"
-            st.markdown(f"""
-            <div class="hist-item">
-                <div class="hi-title">{ms} · {h.get('region','')}</div>
-                <div class="hi-meta">{h.get('ts','')} · {h.get('id','')[-8:]}</div>
-                <span class="hi-badge {badge_cls}">QA {sc}%</span>
-            </div>""", unsafe_allow_html=True)
-            if st.button("↩ Abrir", key=f"open_{i}", use_container_width=True):
-                st.session_state.reporte_texto = h.get("texto","")
-                st.session_state.reporte_html  = texto_a_html(h.get("texto",""))
-                st.session_state.qa            = h.get("qa",{})
-                st.rerun()
-    else:
-        st.markdown('<div style="padding:8px 14px;font-size:11px;color:#2E2E32">Sin estudios previos</div>', unsafe_allow_html=True)
-
+# ─────────────────────────────────────────
+# IZQUIERDA
+# ─────────────────────────────────────────
+with col_izq:
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-    # Voice
-    st.markdown('<div style="padding:0 10px">', unsafe_allow_html=True)
-    st.markdown('<span class="lbl">Dictado de voz</span>', unsafe_allow_html=True)
-    audio = st.audio_input("Grabar", label_visibility="collapsed", key="audio_in")
-    if audio:
-        t = transcribir(audio)
-        if t and t not in st.session_state.dictado:
-            st.session_state.dictado += (" " if st.session_state.dictado else "") + t
-            st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
+    if not api_key:
+        api_key = st.text_input("API Key", type="password",
+                                label_visibility="collapsed",
+                                placeholder="sk-... DeepSeek API Key")
 
-    # Bottom row controls
-    st.markdown("<div style='padding:8px 10px 0'>", unsafe_allow_html=True)
-    ra, rb, rc = st.columns([1,1,2], gap="small")
-    with ra:
-        st.markdown('<div class="btn-ghost">', unsafe_allow_html=True)
-        st.button("🕐", use_container_width=True, key="btn_hist_icon")
-        st.markdown('</div>', unsafe_allow_html=True)
-    with rb:
-        st.markdown('<div class="btn-ghost">', unsafe_allow_html=True)
-        st.button("＋", use_container_width=True, key="btn_add_icon")
-        st.markdown('</div>', unsafe_allow_html=True)
-    with rc:
-        ai_lbl = "AI  ●" if st.session_state.ai_toggle else "AI  ○"
-        st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
-        if st.button(ai_lbl, use_container_width=True, key="ai_toggle_btn"):
-            st.session_state.ai_toggle = not st.session_state.ai_toggle
-            st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+    # ── Modalidad y región ──
+    with st.expander("⊞  MODALIDAD & REGIÓN", expanded=True):
+        st.markdown('<span class="plabel">MODALIDAD</span>', unsafe_allow_html=True)
+        modalidad = st.selectbox("Modalidad", list(SUGERENCIAS.keys()), label_visibility="collapsed")
 
-    # Generate button
-    st.markdown("<div style='padding:8px 10px 0'>", unsafe_allow_html=True)
-    st.markdown('<div class="btn-accent">', unsafe_allow_html=True)
-    procesar = st.button("🎙  Generar informe", use_container_width=True, key="btn_gen")
+        st.markdown('<span class="plabel">REGIÓN ANATÓMICA</span>', unsafe_allow_html=True)
+        region = st.selectbox("Región", REGIONES, label_visibility="collapsed")
+
+    # ── Dictado ──
+    with st.expander("⊞  DICTADO DE VOZ", expanded=True):
+        audio_data = st.audio_input("Voz", label_visibility="collapsed")
+        if audio_data:
+            nuevo = transcribir_voz(audio_data)
+            if nuevo and nuevo not in st.session_state.dictado:
+                st.session_state.dictado += " " + nuevo
+
+        st.markdown('<span class="plabel">SEÑAL TRANSCRITA</span>', unsafe_allow_html=True)
+        dictado = st.text_area("Dictado", value=st.session_state.dictado,
+                               height=120, label_visibility="collapsed",
+                               placeholder="Dictado o escritura manual...\n\nEj: Desgarro horizontal menisco medial grado III Stoller, extrusión 3 mm...")
+
+    # ── Sugerencias ──
+    with st.expander("⊞  SUGERENCIAS IA", expanded=True):
+        sugs = SUGERENCIAS.get(modalidad, [])
+        chips_html = '<div class="sug-chips">'
+        for s in sugs:
+            chips_html += f'<span class="sug-chip">{s}</span>'
+        chips_html += '</div>'
+        st.markdown(chips_html, unsafe_allow_html=True)
+        st.caption("Haz clic en un chip en el editor para insertar")
+
+    # ── Clasificaciones ──
+    with st.expander("⊞  CLASIFICACIONES", expanded=False):
+        for nombre, items in CLASIFICACIONES.items():
+            st.markdown(f'<span class="plabel">{nombre}</span>', unsafe_allow_html=True)
+            for grado, desc in items:
+                key = f"cls_{nombre}_{grado}"
+                activo = st.session_state.clasif_activas.get(nombre) == f"Grado {grado}: {desc}"
+                label = f"{'✓ ' if activo else ''}{grado} · {desc}"
+                if st.button(label, key=key, use_container_width=True):
+                    if activo:
+                        del st.session_state.clasif_activas[nombre]
+                    else:
+                        st.session_state.clasif_activas[nombre] = f"Grado {grado}: {desc}"
+                    st.rerun()
+            st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+
+    # ── Configuración ──
+    with st.expander("⊞  CONFIGURACIÓN", expanded=False):
+        st.markdown('<span class="plabel">PLANTILLA BASE</span>', unsafe_allow_html=True)
+        archivo_base = st.file_uploader("Plantilla", type=["docx"], label_visibility="collapsed")
+        plantilla_txt = leer_plantilla(archivo_base) if archivo_base else ""
+
+        st.markdown('<span class="plabel">DIRECTRICES DE ESTILO</span>', unsafe_allow_html=True)
+        instrucciones = st.text_area("Directrices", height=70, label_visibility="collapsed",
+                                     value="Lenguaje médico experto. Sin asteriscos. Expandir clasificaciones radiológicas.")
+
+    # ── Botones ──
+    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+    st.markdown('<div class="btn-main">', unsafe_allow_html=True)
+    procesar = st.button("⬡  PROCESAR INFORME", use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
 
-    # Update
-    st.markdown("<div style='padding:6px 10px 14px'>", unsafe_allow_html=True)
-    st.markdown('<div class="btn-solid">', unsafe_allow_html=True)
-    st.button("Actualizar informe", use_container_width=True, key="btn_update")
-    st.markdown('</div></div>', unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("⌫ Purgar dictado", use_container_width=True):
+            st.session_state.dictado = ""
+            st.rerun()
+    with c2:
+        if st.button("⟳ Limpiar informe", use_container_width=True):
+            st.session_state.reporte_html = ""
+            st.session_state.reporte_texto = ""
+            st.rerun()
 
-    # Settings
-    with st.expander("CONFIGURACIÓN"):
-        st.text_input("API Key", type="password", key="api_key", label_visibility="collapsed", placeholder="DeepSeek / OpenAI key")
-        st.radio("Modelo", ["deepseek","openai_mini","openai_4"], key="proveedor",
-                 format_func=lambda x:{"deepseek":"DeepSeek","openai_mini":"GPT-4o Mini","openai_4":"GPT-4.1 Mini"}[x],
-                 label_visibility="collapsed")
-        pf = st.file_uploader("Plantilla .docx", type=["docx"], label_visibility="collapsed")
-        if pf: st.session_state.plantilla_txt = leer_plantilla(pf)
-
-    with st.expander("MI ESTILO"):
-        ej = st.text_area("Ejemplo", height=70, label_visibility="collapsed", placeholder="Pega un informe tuyo…")
-        if st.button("Aprender", use_container_width=True):
-            if ej.strip():
-                st.session_state.estilo_ejemplos.append(ej.strip())
-                st.success(f"{len(st.session_state.estilo_ejemplos)} ejemplo(s)")
-        st.text_area("Preferencias", key="estilo_pref", height=40, label_visibility="collapsed",
-                     placeholder="Ej: Empezar siempre por meniscos…")
-
-    with st.expander("ESTUDIO"):
-        st.selectbox("Modalidad", MODALIDADES, key="modalidad", label_visibility="collapsed")
-        st.selectbox("Región", REGIONES, key="region", label_visibility="collapsed")
-        st.text_area("Dictado manual", key="dictado", height=80, label_visibility="collapsed",
-                     placeholder="Escribe los hallazgos aquí…")
-        if st.session_state.dictado:
-            st.markdown(f'<div style="font-size:10px;color:#3E3E44;padding:3px 0">{len(st.session_state.dictado.split())} palabras</div>', unsafe_allow_html=True)
-
-    with st.expander("CLASIFICACIONES"):
-        c_sel = st.selectbox("Clasificación", list(KB_CLASIF.keys()), label_visibility="collapsed", key="c_sel")
-        if c_sel:
-            g_sel = st.selectbox("Grado", list(KB_CLASIF[c_sel]["grados"].keys()), label_visibility="collapsed", key="g_sel")
-            if g_sel:
-                st.markdown(f'<div style="font-size:11px;color:#505055;padding:3px 0">{KB_CLASIF[c_sel]["grados"][g_sel]}</div>', unsafe_allow_html=True)
-            if st.button("＋ Agregar al caso"):
-                st.session_state.clasif_activas[c_sel] = g_sel
-                st.rerun()
-        if st.session_state.clasif_activas:
-            for k,v in list(st.session_state.clasif_activas.items()):
-                cc1, cc2 = st.columns([4,1])
-                with cc1: st.markdown(f'<div style="font-size:11px;color:#6E6E78;padding:2px 0"><span style="color:#E8B84B;font-weight:700">{k}</span> Gr.{v}</div>', unsafe_allow_html=True)
-                with cc2:
-                    if st.button("×", key=f"rm_{k}"): del st.session_state.clasif_activas[k]; st.rerun()
-
-# ══════════════════════════════════════════════════════════════════
-# PROCESSING
-# ══════════════════════════════════════════════════════════════════
+# ─────────────────────────────────────────
+# PROCESAMIENTO IA
+# ─────────────────────────────────────────
 if procesar:
-    client, model_name = get_client()
-    dictado = st.session_state.dictado
-    if client and dictado.strip():
-        with st.spinner("Generando informe AURA…"):
+    if api_key and dictado.strip():
+        client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+
+        clasif_ctx = ""
+        if st.session_state.clasif_activas:
+            clasif_ctx = "\nCLASIFICACIONES ACTIVAS DEL RADIÓLOGO:\n"
+            for k, v in st.session_state.clasif_activas.items():
+                clasif_ctx += f"- {k}: {v}\n"
+
+        prompt = f"""
+Eres Beam AI, asistente experto en interpretación radiológica. Redacta un informe de {modalidad} para región: {region}.
+
+LÓGICA:
+1. Agrupa e infiere diagnósticos desde los hallazgos del dictado.
+2. Si recibes diagnósticos, expande los hallazgos anatómicos esperados.
+3. Usa las clasificaciones radiológicas activas del radiólogo.
+4. La IMPRESIÓN DIAGNÓSTICA debe ser elegante, concluyente y clínicamente accionable.
+5. Sugiere seguimiento/manejo si el grado de lesión lo amerita.
+
+{clasif_ctx}
+
+FORMATO ESTRICTO:
+- TÍTULOS DE SECCIÓN en MAYÚSCULAS (TÉCNICA, HALLAZGOS, IMPRESIÓN DIAGNÓSTICA)
+- SIN asteriscos ni markdown
+- Subtítulos de subsección en MAYÚSCULAS
+- Usa viñetas con "•" para la impresión diagnóstica
+- Redacción fluida y profesional
+- Respeta esta plantilla base: {plantilla_txt if plantilla_txt else "TÉCNICA / HALLAZGOS / IMPRESIÓN DIAGNÓSTICA"}
+
+DIRECTRICES: {instrucciones}
+
+DICTADO DEL RADIÓLOGO:
+{dictado}
+"""
+        with st.spinner("Sintetizando modelo de datos..."):
             try:
                 res = client.chat.completions.create(
-                    model=model_name,
-                    messages=[
-                        {"role":"system","content":build_system_prompt()},
-                        {"role":"user","content":f"DICTADO:\n{dictado}"}
-                    ], temperature=0.1)
+                    model="deepseek-chat",
+                    messages=[{"role": "system", "content": prompt}],
+                    temperature=0.1
+                )
                 texto = res.choices[0].message.content
                 st.session_state.reporte_texto = texto
-                st.session_state.reporte_html  = texto_a_html(texto)
-                qa = calcular_qa(texto, st.session_state.region)
-                st.session_state.qa = qa
-                ts  = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
-                eid = st.session_state.estudio_id
-                st.session_state.historial.append({"texto":texto,"qa":qa,"region":st.session_state.region,
-                    "modalidad":st.session_state.modalidad,"score":qa["score"],"ts":ts,"id":eid})
+
+                # Convertir texto plano a HTML básico para el editor
+                html_lines = []
+                for line in texto.split("\n"):
+                    stripped = line.strip()
+                    if not stripped:
+                        html_lines.append("<br>")
+                    elif stripped.isupper() and len(stripped) < 60:
+                        html_lines.append(f"<b>{stripped}</b><br>")
+                    elif stripped.startswith("•"):
+                        html_lines.append(f"<li>{stripped[1:].strip()}</li>")
+                    else:
+                        html_lines.append(f"{stripped}<br>")
+
+                st.session_state.reporte_html = "\n".join(html_lines)
                 st.rerun()
-            except Exception as e: st.error(f"Error: {e}")
-    elif not client: st.warning("Ingresa tu API Key en Configuración.")
-    else:            st.warning("Escribe o dicta los hallazgos primero.")
+            except Exception as e:
+                st.error(f"Error de enlace: {e}")
+    elif not api_key:
+        st.warning("Ingresa tu API Key de DeepSeek.")
+    else:
+        st.warning("Ingresa dictado o descripción clínica.")
 
-# ══════════════════════════════════════════════════════════════════
-# MAIN PANEL
-# ══════════════════════════════════════════════════════════════════
-with col_main:
-    region    = st.session_state.region
-    modalidad = st.session_state.modalidad
-    ms = {"Resonancia Magnética":"RM","Tomografía Computarizada":"TC","Radiografía":"Rx","Ultrasonido":"US","PET-CT":"PET"}.get(modalidad, modalidad[:2])
-    eid = st.session_state.estudio_id
+# ─────────────────────────────────────────
+# CENTRO — Editor rico
+# ─────────────────────────────────────────
+with col_centro:
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-    # Topbar
-    st.markdown(f"""
-    <div class="topbar">
-        <button class="tb-chip">↑ Plantilla</button>
-        <div class="tb-sep"></div>
-        <span class="tb-title">{ms} · {region.upper()}</span>
-        <div class="tb-sep"></div>
-        <span class="id-pill">{eid}</span>
-        <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
-            <button class="tb-chip">📊 Reportes</button>
-            <div class="tb-sep"></div>
-            <div class="tb-user">
-                <div class="tb-avatar">A</div>
-                Dr. Alejandro M.
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    # Sugerencias chips (display)
+    sugs = SUGERENCIAS.get(modalidad, [])
+    chips_html = '<div class="sug-chips" style="margin-bottom:8px">'
+    chips_html += '<span style="font-size:10px;color:#2a4060;font-family:\'IBM Plex Mono\',monospace;margin-right:4px;">Sugerencias →</span>'
+    for s in sugs:
+        chips_html += f'<span class="sug-chip">{s}</span>'
+    chips_html += '</div>'
+    st.markdown(chips_html, unsafe_allow_html=True)
 
-    # ── Rich Editor ──
-    content = st.session_state.reporte_html or DEFAULT_CONTENT
+    # Contenido inicial del editor
+    contenido_inicial = st.session_state.reporte_html or """<b>RESONANCIA MAGNÉTICA DE RODILLA DERECHA</b><br>
+<br>
+<b>TÉCNICA</b><br>
+Secuencias multiplanares en T1, DP con supresión grasa (DPFS), T2 y STIR en planos axial, coronal y sagital, sin contraste.<br>
+<br>
+<b>HALLAZGOS</b><br>
+<br>
+<b>MENISCOS</b><br>
+Menisco medial: alteración de señal grado III de Stoller en cuerpo y cuerno posterior, compatible con desgarro horizontal. Extrusión de 3 mm.<br>
+Menisco lateral: morfología e intensidad de señal conservadas.<br>
+<br>
+<b>LIGAMENTOS</b><br>
+Ligamento cruzado anterior con señal heterogénea en tercio proximal, compatible con lesión parcial grado I de Hope &amp; Feagin.<br>
+<br>
+<b>CARTÍLAGO</b><br>
+Adelgazamiento condral focal grado III de ICRS en platillo tibial medial (12 mm).<br>
+<br>
+<b>IMPRESIÓN DIAGNÓSTICA</b><br>
+<li>Desgarro horizontal de menisco medial, Stoller grado III, con extrusión de 3 mm.</li>
+<li>Lesión parcial grado I de LCA según Hope &amp; Feagin.</li>
+<li>Condropatía grado III ICRS en compartimento medial con subcondral reactivo.</li>"""
 
-    editor_html = f"""<!DOCTYPE html>
-<html lang="es">
+    # Fondos disponibles
+    fondos = {
+        "clinical": {"bg": "#0a1018", "color": "#d0e4f0", "label": "Clínico"},
+        "white": {"bg": "#f8f9fa", "color": "#1a2a3a", "label": "Blanco"},
+        "warm": {"bg": "#141008", "color": "#ddd0b8", "label": "Cálido"},
+        "contrast": {"bg": "#000409", "color": "#e8f4ff", "label": "Contraste"},
+        "slate": {"bg": "#0d1520", "color": "#c8dff0", "label": "Slate"},
+    }
+
+    # Editor como componente HTML
+    editor_html = f"""
+<!DOCTYPE html>
+<html>
 <head>
 <meta charset="UTF-8">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <style>
-*,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
-html,body{{background:#111112;font-family:'Inter',sans-serif;height:100vh;overflow:hidden;display:flex;flex-direction:column;color:#E2E2E7}}
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{background:#08090f;font-family:Arial,sans-serif;overflow-x:hidden}}
 
-/* TOOLBAR */
-.toolbar{{background:#0D0D0F;border-bottom:1px solid #1E1E20;padding:7px 14px;display:flex;align-items:center;gap:3px;flex-wrap:wrap;position:sticky;top:0;z-index:50}}
-.tg{{display:flex;align-items:center;gap:2px;padding-right:8px;border-right:1px solid #1E1E20}}
-.tg:last-of-type{{border-right:none;padding-right:0}}
-.tb{{background:none;border:1px solid transparent;color:#505055;font-size:11px;font-family:'Inter',sans-serif;padding:4px 7px;border-radius:5px;cursor:pointer;transition:all .1s;min-width:26px;text-align:center;line-height:1.4;white-space:nowrap}}
-.tb:hover{{background:#1E1E20;color:#AEAEB8;border-color:#2E2E32}}
-.tb.on{{background:rgba(232,184,75,.1);border-color:rgba(232,184,75,.2);color:#E8B84B}}
-.tsel{{background:#1E1E20;border:1px solid #2E2E32;color:#6E6E78;font-size:11px;font-family:'Inter',sans-serif;padding:4px 6px;border-radius:5px;outline:none;cursor:pointer}}
-.tsel:focus{{border-color:#E8B84B}}
-.bg-dot{{width:14px;height:14px;border-radius:50%;cursor:pointer;border:2px solid transparent;flex-shrink:0;transition:all .12s}}
-.bg-dot:hover,.bg-dot.on{{border-color:#E8B84B;box-shadow:0 0 0 2px rgba(232,184,75,.18)}}
-.tlabel{{font-size:10px;color:#3E3E44;white-space:nowrap;font-family:'Inter',sans-serif}}
-.copy-btn{{margin-left:auto;background:#1E1E20;border:1px solid #2E2E32;color:#6E6E78;font-size:11px;font-family:'Inter',sans-serif;font-weight:500;padding:4px 10px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all .12s;white-space:nowrap}}
-.copy-btn:hover{{color:#E2E2E7;border-color:#3E3E44}}
+.format-bar{{
+    background:#0b0f1a;border-bottom:1px solid #1a2333;
+    padding:6px 12px;display:flex;align-items:center;gap:5px;flex-wrap:wrap;
+    position:sticky;top:0;z-index:100;
+}}
+.fb-group{{display:flex;align-items:center;gap:2px;padding-right:7px;border-right:1px solid #1a2333}}
+.fb-group:last-child{{border-right:none}}
+.fb-btn{{
+    background:none;border:1px solid transparent;color:#3a6a9f;
+    font-size:12px;font-family:Arial,sans-serif;
+    padding:4px 7px;border-radius:4px;cursor:pointer;transition:all .15s;
+    min-width:26px;text-align:center;line-height:1;
+}}
+.fb-btn:hover{{background:#0d1828;border-color:#1a3050;color:#7ac2f0}}
+.fb-btn.active{{background:#0f1e30;border-color:#1a3a58;color:#7ac2f0}}
+.fb-sel{{
+    background:#0f1520;border:1px solid #1a2f48;color:#6a9abf;
+    font-size:11px;font-family:'IBM Plex Mono',monospace;
+    padding:3px 5px;border-radius:4px;outline:none;appearance:none;cursor:pointer;
+}}
+.cdot{{
+    width:16px;height:16px;border-radius:50%;cursor:pointer;
+    border:2px solid transparent;transition:border-color .15s;flex-shrink:0;
+}}
+.cdot:hover,.cdot.sel{{border-color:#3b8bd4}}
+.flabel{{font-size:9px;color:#2a4060;font-family:'IBM Plex Mono',monospace;}}
 
-/* EDITOR */
-.editor-wrap{{flex:1;overflow-y:auto}}
-#doc{{min-height:100%;padding:28px 40px;font-family:'Inter',sans-serif;font-size:14px;line-height:1.9;color:#C7C7D0;outline:none;background:#111112;transition:background .2s,color .2s}}
-#doc h3.sec{{font-family:'Inter',sans-serif;font-size:10px;font-weight:700;color:#E2E2E7;letter-spacing:.09em;text-transform:uppercase;margin:22px 0 8px;padding-bottom:7px;border-bottom:1px solid #1E1E20}}
-#doc p{{margin-bottom:8px;color:#C7C7D0;line-height:1.85}}
-#doc strong,#doc b{{color:#E2E2E7;font-weight:600}}
-#doc li{{margin-left:18px;margin-bottom:5px;color:#C7C7D0;list-style-type:disc;padding-left:4px}}
-#doc hr{{border:none;border-top:1px solid #1E1E20;margin:14px 0}}
+.editor-wrap{{padding:16px 20px;min-height:500px}}
+.doc-surface{{
+    min-height:480px;padding:24px 32px;
+    font-family:Arial,sans-serif;font-size:14px;line-height:1.85;
+    color:#d0e4f0;outline:none;
+    border-radius:6px;transition:background .3s,color .3s;
+    background:#0a1018;
+}}
+.doc-surface li{{margin-left:20px;margin-bottom:3px}}
+.doc-surface b{{color:#e8f4ff}}
+.doc-surface hr{{border:none;border-top:1px solid #2a4a6a;margin:10px 0}}
 
-/* BOTTOM BAR */
-.bbar{{background:#0D0D0F;border-top:1px solid #1E1E20;padding:8px 14px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}}
-.bp{{display:inline-flex;align-items:center;gap:5px;padding:5px 13px;border-radius:20px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid #2E2E32;background:#1E1E20;color:#6E6E78;transition:all .12s;white-space:nowrap;font-family:'Inter',sans-serif}}
-.bp:hover{{border-color:#E8B84B;color:#E8B84B}}
-.bp.prime{{background:#E8B84B;border-color:#E8B84B;color:#111112;font-weight:700}}
-.bp.prime:hover{{background:#F5C862;box-shadow:0 4px 12px rgba(232,184,75,.25)}}
-.score-wrap{{margin-left:auto;display:flex;align-items:center;gap:10px}}
-.score-n{{font-size:17px;font-weight:700;color:#E2E2E7;font-family:'Inter',sans-serif}}
-.score-l{{font-size:9px;font-weight:700;color:#3E3E44;text-transform:uppercase;letter-spacing:.09em}}
-.score-track{{width:42px;height:3px;background:#1E1E20;border-radius:2px;margin-top:4px;overflow:hidden}}
-.score-bar{{height:100%;border-radius:2px;transition:width .5s}}
-.saved{{font-size:11px;color:#34C759;display:flex;align-items:center;gap:4px}}
-
-/* SLASH MENU */
-.sm{{position:fixed;background:#141416;border:1px solid #2E2E32;border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.8);z-index:1000;min-width:280px;overflow:hidden;display:none}}
-.sm-hdr{{padding:8px 14px 5px;font-size:9px;font-weight:700;color:#3E3E44;letter-spacing:.09em;text-transform:uppercase;border-bottom:1px solid #1E1E20}}
-.si{{padding:9px 14px;cursor:pointer;transition:background .1s;font-size:12px;color:#AEAEB8;display:flex;align-items:center;gap:10px;font-family:'Inter',sans-serif}}
-.si:hover,.si.sel{{background:#1E1E20}}
-.sk{{color:#E8B84B;font-weight:700;font-family:'JetBrains Mono',monospace;font-size:10px;min-width:95px}}
-.sd{{color:#505055;font-size:11px}}
+.action-strip{{
+    background:#0a0d16;border-top:1px solid #1a2333;
+    padding:8px 14px;display:flex;align-items:center;gap:7px;flex-wrap:wrap;
+}}
+.act-btn{{
+    background:#0d1828;border:1px solid #1a3050;color:#3a6a9f;
+    font-size:11px;font-family:'IBM Plex Mono',monospace;
+    padding:5px 11px;border-radius:5px;cursor:pointer;
+    transition:all .15s;display:flex;align-items:center;gap:5px;
+}}
+.act-btn:hover{{color:#7ac2f0;background:#102030;border-color:#2a4a6a}}
+.act-btn.prime{{color:#6ab8f0;border-color:#1a3a58;background:#0e1e30}}
+.cbar-wrap{{margin-left:auto;display:flex;align-items:center;gap:7px}}
+.cbar-bg{{width:70px;height:3px;background:#0f1828;border-radius:2px;overflow:hidden}}
+.cbar-fill{{height:100%;background:#1a4a80;border-radius:2px;transition:width .4s}}
+.cpct{{font-size:10px;color:#2a5a9a;font-family:'IBM Plex Mono',monospace}}
 </style>
 </head>
 <body>
 
-<div class="toolbar">
-  <div class="tg">
-    <button class="tb" onclick="fmt('undo')">↩</button>
-    <button class="tb" onclick="fmt('redo')">↪</button>
-  </div>
-  <div class="tg">
-    <button class="tb" id="btnB" onclick="fmt('bold')"><b>B</b></button>
-    <button class="tb" id="btnI" onclick="fmt('italic')"><i>I</i></button>
-    <button class="tb" id="btnU" onclick="fmt('underline')"><u>U</u></button>
-  </div>
-  <div class="tg">
-    <button class="tb" onclick="fmt('insertUnorderedList')">• Lista</button>
-    <button class="tb" onclick="fmt('insertOrderedList')">1. Lista</button>
-  </div>
-  <div class="tg">
-    <button class="tb" onclick="insSection()">§ Sec</button>
-    <button class="tb" onclick="insHR()">— HR</button>
-  </div>
-  <div class="tg" style="gap:8px;align-items:center">
-    <span class="tlabel">Estilo</span>
-    <select class="tsel" style="width:80px">
-      <option>Académico</option><option>Conservador</option><option>Directo</option>
+<div class="format-bar">
+  <div class="fb-group">
+    <select class="fb-sel" id="fontSel" onchange="applyFont(this.value)" style="width:90px">
+      <option value="Arial" selected>Arial</option>
+      <option value="'Courier New'">Courier New</option>
+      <option value="Georgia">Georgia</option>
+      <option value="'Times New Roman'">Times New Roman</option>
+      <option value="'IBM Plex Mono'">IBM Plex Mono</option>
     </select>
-    <select class="tsel" style="width:100px">
-      <option>Médico tratante</option><option>Paciente</option><option>Referente</option>
+    <select class="fb-sel" id="sizeSel" onchange="applySize(this.value)" style="width:44px">
+      <option>11</option><option>12</option><option>13</option>
+      <option selected>14</option><option>15</option><option>16</option><option>18</option>
     </select>
   </div>
-  <div class="tg" style="gap:6px;align-items:center">
-    <span class="tlabel">Fondo</span>
-    <div class="bg-dot on"  style="background:#111112" onclick="setBg(this,'#111112','#C7C7D0')" title="Dark"></div>
-    <div class="bg-dot"     style="background:#081018" onclick="setBg(this,'#081018','#C8D8F0')" title="PACS"></div>
-    <div class="bg-dot"     style="background:#1A1A2E" onclick="setBg(this,'#1A1A2E','#C0C8E8')" title="Azul profundo"></div>
-    <div class="bg-dot"     style="background:#FFFFFF" onclick="setBg(this,'#FFFFFF','#1C2132')" title="Blanco"></div>
-    <div class="bg-dot"     style="background:#F8F7F2" onclick="setBg(this,'#F8F7F2','#2D3748')" title="Cálido"></div>
+  <div class="fb-group">
+    <button class="fb-btn" id="btnB" onclick="fmt('bold')" title="Negrita"><b>B</b></button>
+    <button class="fb-btn" id="btnI" onclick="fmt('italic')" title="Cursiva"><i>I</i></button>
+    <button class="fb-btn" id="btnU" onclick="fmt('underline')" title="Subrayado"><u>U</u></button>
   </div>
-  <button class="copy-btn" onclick="copyAll()">⎘ Copiar</button>
+  <div class="fb-group">
+    <button class="fb-btn" onclick="fmt('justifyLeft')" title="Izquierda"><i class="ti ti-align-left"></i></button>
+    <button class="fb-btn" onclick="fmt('justifyCenter')" title="Centro"><i class="ti ti-align-center"></i></button>
+    <button class="fb-btn" onclick="fmt('justifyRight')" title="Derecha"><i class="ti ti-align-right"></i></button>
+  </div>
+  <div class="fb-group">
+    <button class="fb-btn" onclick="fmt('insertUnorderedList')" title="Viñetas"><i class="ti ti-list"></i></button>
+    <button class="fb-btn" onclick="fmt('insertOrderedList')" title="Lista numerada"><i class="ti ti-list-numbers"></i></button>
+    <button class="fb-btn" onclick="insertHR()" title="Separador"><i class="ti ti-minus"></i></button>
+  </div>
+  <div class="fb-group" style="align-items:center;gap:5px">
+    <span class="flabel">Fondo:</span>
+    <div class="cdot sel" style="background:#0a1018" data-bg="clinical" onclick="setBg(this,'#0a1018','#d0e4f0')" title="Clínico"></div>
+    <div class="cdot" style="background:#f8f9fa;border:1px solid #bbb" data-bg="white" onclick="setBg(this,'#f8f9fa','#1a2a3a')" title="Blanco"></div>
+    <div class="cdot" style="background:#141008" data-bg="warm" onclick="setBg(this,'#141008','#ddd0b8')" title="Cálido"></div>
+    <div class="cdot" style="background:#000409" data-bg="contrast" onclick="setBg(this,'#000409','#e8f4ff')" title="Contraste"></div>
+    <div class="cdot" style="background:#0d1520" data-bg="slate" onclick="setBg(this,'#0d1520','#c8dff0')" title="Slate"></div>
+  </div>
 </div>
 
 <div class="editor-wrap">
-  <div id="doc" contenteditable="true" spellcheck="true" lang="es">
-    {content}
+  <div class="doc-surface" id="doc" contenteditable="true" spellcheck="false">
+    {contenido_inicial}
   </div>
 </div>
 
-<div id="sm" class="sm">
-  <div class="sm-hdr">Plantillas — escribe /comando</div>
-</div>
-
-<div class="bbar">
-  <button class="bp" onclick="send('suggest_conclusion')">＋ Sugerir conclusión</button>
-  <button class="bp" onclick="send('optimize')">✦ Optimizar</button>
-  <button class="bp" onclick="send('differential')">⊕ Dif. diagnóstico</button>
-  <button class="bp" onclick="send('definiciones')">◎ Definiciones</button>
-  <button class="bp" onclick="send('qa_full')">◈ Auditar QA</button>
-  <button class="bp prime" onclick="send('export')">↓ Exportar .docx</button>
-  <span class="saved" id="savedLbl" style="display:none">✓ Auto-guardado</span>
-  <div class="score-wrap">
-    <div>
-      <div class="score-n" id="sNum">—</div>
-      <div class="score-l">Calidad</div>
-      <div class="score-track"><div class="score-bar" id="sBar" style="width:0;background:#3E3E44"></div></div>
-    </div>
+<div class="action-strip">
+  <button class="act-btn" onclick="optimize()"><i class="ti ti-wand" style="font-size:13px"></i> Optimizar conclusión</button>
+  <button class="act-btn" onclick="getDefiniciones()"><i class="ti ti-book" style="font-size:13px"></i> Definiciones operativas</button>
+  <button class="act-btn" onclick="copyText()"><i class="ti ti-copy" style="font-size:13px"></i> Copiar</button>
+  <button class="act-btn prime" onclick="exportDoc()"><i class="ti ti-download" style="font-size:13px"></i> Exportar .docx</button>
+  <div class="cbar-wrap">
+    <div class="cbar-bg"><div class="cbar-fill" id="cbar" style="width:0%"></div></div>
+    <span class="cpct" id="cpct">0%</span>
   </div>
 </div>
 
 <script>
-var doc=document.getElementById('doc');
-var sm=document.getElementById('sm');
-var slashOn=false,slashSel=0;
+var docEl = document.getElementById('doc');
+var currentFont = 'Arial';
 
-var CMDS=[
-  {{k:'/stoller',l:'Stoller',d:'Clasificación meniscal RM',t:'<h3 class="sec">MENISCOS</h3><p><strong>Menisco medial/lateral:</strong> alteración de señal grado [I/II/III] de Stoller en [cuerpo / cuerno], compatible con [cambio degenerativo / desgarro].</p>'}},
-  {{k:'/icrs',l:'ICRS',d:'Cartílago articular',t:'<p><strong>Cartílago articular:</strong> adelgazamiento condral focal grado [I/II/III/IV] de ICRS en [localización], extensión de __ mm.</p>'}},
-  {{k:'/kl',l:'Kellgren-Lawrence',d:'Osteoartrosis',t:'<p>Hallazgos compatibles con osteoartrosis grado [I/II/III/IV] de Kellgren-Lawrence en [compartimento].</p>'}},
-  {{k:'/lca',l:'Hope & Feagin',d:'Lesión LCA',t:'<p><strong>Ligamento cruzado anterior:</strong> [señal heterogénea / discontinuidad], compatible con lesión [parcial / completa / crónica].</p>'}},
-  {{k:'/pfirrmann',l:'Pfirrmann',d:'Degeneración discal',t:'<p>Disco [L_-L_]: degeneración grado [I/II/III/IV/V] de Pfirrmann.</p>'}},
-  {{k:'/modic',l:'Modic',d:'Placa terminal vertebral',t:'<p>Cambios tipo Modic [I/II/III] en placa terminal de [nivel].</p>'}},
-  {{k:'/tirads',l:'ACR TIRADS',d:'Nódulo tiroideo',t:'<p><strong>Nódulo tiroideo</strong> [lóbulo]: [descripción]. Clasificación ACR TIRADS [2-5].</p>'}},
-  {{k:'/birads',l:'BI-RADS',d:'Hallazgo mamario',t:'<p><strong>Hallazgo mamario:</strong> [descripción]. Categoría ACR BI-RADS [1-6].</p>'}},
-  {{k:'/lirads',l:'LI-RADS',d:'Lesión hepática',t:'<p><strong>Lesión focal hepática:</strong> [descripción]. Clasificación LI-RADS [LR-1 a LR-5/M].</p>'}},
-  {{k:'/fleischner',l:'Fleischner 2017',d:'Nódulo pulmonar',t:'<p><strong>Nódulo pulmonar</strong> [sólido/subsólido] de __ mm en [lóbulo]. Criterios Fleischner 2017: [recomendación].</p>'}},
-  {{k:'/tecnica',l:'Técnica estándar',d:'Plantilla de técnica',t:'<h3 class="sec">TÉCNICA</h3><p>Estudio de [modalidad] de [región] en equipo de [__] Tesla. Secuencias [describir] en planos [axial/coronal/sagital]. [Sin / Con] contraste.</p>'}},
-  {{k:'/impresion',l:'Impresión DX',d:'Plantilla de conclusión',t:'<h3 class="sec">IMPRESIÓN DIAGNÓSTICA</h3><li>Hallazgo principal con clasificación y grado.</li><li>Hallazgo secundario.</li><li>Seguimiento o estudios complementarios.</li>'}},
-];
+function fmt(cmd) {{
+  docEl.focus();
+  document.execCommand(cmd, false, null);
+  updateState();
+}}
 
-function fmt(cmd){{doc.focus();document.execCommand(cmd,false,null);updBtns();}}
-function updBtns(){{
-  [['bold','btnB'],['italic','btnI'],['underline','btnU']].forEach(function(p){{
-    var b=document.getElementById(p[1]);
-    if(b)b.classList.toggle('on',document.queryCommandState(p[0]));
+function updateState() {{
+  ['Bold','Italic','Underline'].forEach(function(c) {{
+    var b = document.getElementById('btn'+c[0]);
+    if(b) b.classList.toggle('active', document.queryCommandState(c.toLowerCase()));
   }});
 }}
-function setBg(el,bg,col){{
-  doc.style.background=bg;doc.style.color=col;
-  document.querySelectorAll('.bg-dot').forEach(function(d){{d.classList.remove('on')}});
-  el.classList.add('on');
-  var isDark=bg!=='#FFFFFF'&&bg!=='#F8F7F2';
-  document.querySelectorAll('#doc h3.sec').forEach(function(t){{
-    t.style.color=isDark?'#E2E2E7':'#1A202C';
-    t.style.borderBottomColor=isDark?'#1E1E20':'#E2E8F0';
-  }});
-  document.querySelectorAll('#doc strong,#doc b').forEach(function(t){{
-    t.style.color=isDark?'#E2E2E7':'#1A202C';
-  }});
-}}
-function insSection(){{doc.focus();document.execCommand('insertHTML',false,'<h3 class="sec">NUEVA SECCIÓN</h3><p></p>');}}
-function insHR(){{doc.focus();document.execCommand('insertHTML',false,'<hr>');}}
 
-function calcScore(){{
-  var t=doc.innerText.toUpperCase();
-  var secs=['TÉCNICA','HALLAZGOS','IMPRESIÓN','CONCLUSIÓN'];
-  var found=secs.filter(function(s){{return t.indexOf(s)>=0}}).length;
-  var words=doc.innerText.trim().split(' ').filter(Boolean).length;
-  return Math.min(100,Math.round((found/4)*40+Math.min(words/200,1)*40+(found>=2?20:0)));
-}}
-function updScore(){{
-  var s=calcScore();
-  document.getElementById('sNum').textContent=s+'%';
-  var b=document.getElementById('sBar');
-  b.style.width=s+'%';
-  b.style.background=s>=80?'#34C759':s>=50?'#E8B84B':'#FF453A';
-  if(s>0)document.getElementById('savedLbl').style.display='flex';
+function applyFont(f) {{
+  currentFont = f;
+  docEl.style.fontFamily = f;
 }}
 
-function showSlash(filter){{
-  var items=filter?CMDS.filter(function(c){{return c.k.includes(filter)||c.l.toLowerCase().includes(filter)}}):CMDS;
-  if(!items.length){{hideSlash();return;}}
-  var sel=window.getSelection();
-  if(!sel.rangeCount)return;
-  var r=sel.getRangeAt(0).getBoundingClientRect();
-  var html=items.map(function(c,i){{
-    return '<div class="si'+(i===0?' sel':'')+'" onclick="insCmd(\''+c.k+'\')"><span class="sk">'+c.k+'</span><div><div style="font-weight:600;font-size:12px">'+c.l+'</div><span class="sd">'+c.d+'</span></div></div>';
-  }}).join('');
-  sm.innerHTML='<div class="sm-hdr">Plantillas</div>'+html;
-  sm.style.display='block';
-  sm.style.left=Math.max(8,r.left)+'px';
-  sm.style.top=(r.bottom+6)+'px';
-  slashOn=true;slashSel=0;
-}}
-function hideSlash(){{sm.style.display='none';slashOn=false;slashSel=0;}}
-function insCmd(cmd){{
-  hideSlash();doc.focus();
-  var sel=window.getSelection();
-  if(sel.rangeCount){{
-    var range=sel.getRangeAt(0);
-    var txt=(range.startContainer.textContent||'').slice(0,range.startOffset);
-    var si=txt.lastIndexOf('/');
-    if(si>=0){{range.setStart(range.startContainer,si);range.deleteContents();}}
-  }}
-  var c=CMDS.find(function(x){{return x.k===cmd;}});
-  if(c)document.execCommand('insertHTML',false,c.t);
+function applySize(s) {{
+  docEl.style.fontSize = s + 'px';
 }}
 
-doc.addEventListener('keydown',function(e){{
-  if(slashOn){{
-    var its=sm.querySelectorAll('.si');
-    if(e.key==='Escape'){{hideSlash();e.preventDefault();return;}}
-    if(e.key==='Enter'){{e.preventDefault();if(its[slashSel])its[slashSel].click();return;}}
-    if(e.key==='ArrowDown'){{e.preventDefault();slashSel=(slashSel+1)%its.length;its.forEach(function(el,i){{el.classList.toggle('sel',i===slashSel)}});return;}}
-    if(e.key==='ArrowUp'){{e.preventDefault();slashSel=(slashSel-1+its.length)%its.length;its.forEach(function(el,i){{el.classList.toggle('sel',i===slashSel)}});return;}}
-  }}
-}});
-doc.addEventListener('keyup',function(e){{
-  updBtns();updScore();
-  var sel=window.getSelection();
-  if(!sel.rangeCount)return;
-  var r=sel.getRangeAt(0);
-  var txt=((r.startContainer.textContent||'').slice(0,r.startOffset));
-  var m=txt.match(/(\/\w*)$/);
-  if(m)showSlash(m[1]);else hideSlash();
-}});
-doc.addEventListener('mouseup',function(){{updBtns();hideSlash();}});
-document.addEventListener('click',function(e){{if(!sm.contains(e.target))hideSlash();}});
+function setBg(el, bg, col) {{
+  docEl.style.background = bg;
+  docEl.style.color = col;
+  document.querySelectorAll('.cdot').forEach(function(d) {{ d.classList.remove('sel'); }});
+  el.classList.add('sel');
+}}
 
-function copyAll(){{
-  var r=document.createRange();r.selectNode(doc);
+function insertHR() {{
+  docEl.focus();
+  document.execCommand('insertHTML', false, '<hr style="border:none;border-top:1px solid #2a4a6a;margin:12px 0"><br>');
+}}
+
+function calcScore() {{
+  var t = docEl.innerText.toUpperCase();
+  var secs = ['TÉCNICA','HALLAZGOS','IMPRESIÓN'];
+  var found = secs.filter(function(s) {{ return t.includes(s); }}).length;
+  var words = t.split(/\\s+/).filter(Boolean).length;
+  return Math.min(100, Math.round((found/3)*60 + Math.min(words/150,1)*40));
+}}
+
+function updateBar() {{
+  var s = calcScore();
+  document.getElementById('cbar').style.width = s + '%';
+  document.getElementById('cpct').textContent = s + '%';
+}}
+
+docEl.addEventListener('input', updateBar);
+docEl.addEventListener('keyup', updateState);
+docEl.addEventListener('mouseup', updateState);
+window.addEventListener('load', function() {{ updateBar(); }});
+
+function getContent() {{
+  return docEl.innerHTML;
+}}
+
+function getText() {{
+  return docEl.innerText;
+}}
+
+function copyText() {{
+  var range = document.createRange();
+  range.selectNode(docEl);
   window.getSelection().removeAllRanges();
-  window.getSelection().addRange(r);
+  window.getSelection().addRange(range);
   document.execCommand('copy');
   window.getSelection().removeAllRanges();
 }}
-function send(type){{
-  window.parent.postMessage({{type:type,html:doc.innerHTML,text:doc.innerText}},'*');
+
+function optimize() {{
+  var texto = getText();
+  window.parent.postMessage({{type:'optimize', content: texto}}, '*');
 }}
-window.addEventListener('load',function(){{updScore();}});
+
+function getDefiniciones() {{
+  var texto = getText();
+  window.parent.postMessage({{type:'definiciones', content: texto}}, '*');
+}}
+
+function exportDoc() {{
+  var texto = getText();
+  window.parent.postMessage({{type:'export', content: texto, html: getContent()}}, '*');
+}}
 </script>
 </body>
-</html>"""
+</html>
+"""
 
-    components.html(editor_html, height=700, scrolling=False)
+    # Renderizar editor
+    components.html(editor_html, height=680, scrolling=False)
 
-    # ── Action buttons ──
-    st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
-    ba1, ba2, ba3, ba4 = st.columns(4, gap="small")
-    with ba1:
-        if st.button("✦ Optimizar conclusión", use_container_width=True, key="b_opt"):
-            client, model_name = get_client()
-            if client and st.session_state.reporte_texto:
-                with st.spinner("Refinando…"):
-                    try:
-                        res = client.chat.completions.create(model=model_name, messages=[
-                            {"role":"system","content":build_system_prompt()},
-                            {"role":"user","content":f"MEJORA SOLO la IMPRESIÓN/CONCLUSIÓN. Conserva Técnica y Hallazgos intactos. Devuelve el informe COMPLETO.\n\n{st.session_state.reporte_texto}"}
-                        ], temperature=0.2)
-                        t = res.choices[0].message.content
-                        st.session_state.reporte_texto = t
-                        st.session_state.reporte_html  = texto_a_html(t)
-                        st.session_state.qa = calcular_qa(t, st.session_state.region)
-                        st.rerun()
-                    except Exception as e: st.error(str(e))
-    with ba2:
-        if st.button("⊕ Diagnóstico diferencial", use_container_width=True, key="b_dd"):
-            client, model_name = get_client()
-            if client and st.session_state.reporte_texto:
-                with st.spinner("Generando DD…"):
-                    try:
-                        res = client.chat.completions.create(model=model_name, messages=[
-                            {"role":"user","content":f"Como radiólogo experto, genera diagnóstico diferencial estructurado (3-5 opciones) con argumentos. Luego sugiere estudios complementarios. Sin asteriscos.\n\nINFORME:\n{st.session_state.reporte_texto}"}
-                        ], temperature=0.3)
-                        st.session_state.copilot_txt  = res.choices[0].message.content
-                        st.session_state.copilot_tipo = "differential"
-                        st.session_state.right_open   = True
-                        st.rerun()
-                    except Exception as e: st.error(str(e))
-    with ba3:
-        if st.button("◎ Definiciones", use_container_width=True, key="b_def"):
-            client, model_name = get_client()
-            if client and st.session_state.reporte_texto:
-                with st.spinner("Analizando…"):
-                    try:
-                        res = client.chat.completions.create(model=model_name, messages=[
-                            {"role":"user","content":f"Analiza el informe. Proporciona: (1) CLASIFICACIONES USADAS con significado exacto, (2) FALTANTES, (3) DEFINICIONES de términos técnicos, (4) BIBLIOGRAFÍA. Conciso.\n\nINFORME:\n{st.session_state.reporte_texto}"}
-                        ], temperature=0.15)
-                        st.session_state.copilot_txt  = res.choices[0].message.content
-                        st.session_state.copilot_tipo = "definiciones"
-                        st.session_state.right_open   = True
-                        st.rerun()
-                    except Exception as e: st.error(str(e))
-    with ba4:
-        if st.session_state.reporte_texto:
-            docx_b = generar_docx(st.session_state.reporte_html, st.session_state.reporte_texto)
-            reg_s  = st.session_state.region.replace(" ","_").replace("/","_")
-            st.download_button("↓ Exportar .docx", data=docx_b,
-                file_name=f"AURA_{reg_s}.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                use_container_width=True)
-
-# ══════════════════════════════════════════════════════════════════
-# RIGHT PANEL
-# ══════════════════════════════════════════════════════════════════
-if col_right:
-    with col_right:
-        st.markdown("""
-        <div class="rp-head">
-          <span class="rp-title">Asistente IA</span>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # Tabs
-        rt1, rt2, rt3 = st.columns(3, gap="small")
-        with rt1:
-            if st.button("Sugerencias", use_container_width=True, key="tab_sug"):
-                st.session_state.copilot_tipo = "sugerencias"; st.rerun()
-        with rt2:
-            if st.button("Clasif.", use_container_width=True, key="tab_cla"):
-                st.session_state.copilot_tipo = "clasificaciones"; st.rerun()
-        with rt3:
-            if st.button("Definic.", use_container_width=True, key="tab_def"):
-                st.session_state.copilot_tipo = "definiciones_tab"; st.rerun()
-
-        st.markdown('<div class="btn-ghost">', unsafe_allow_html=True)
-        if st.button("✕ Cerrar panel", use_container_width=True, key="close_rp"):
-            st.session_state.right_open = False; st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
-
-        # QA Score
-        qa    = st.session_state.qa
-        score = qa.get("score", 0)
-        sc    = "#34C759" if score >= 80 else "#E8B84B" if score >= 50 else "#FF453A"
-        secciones = qa.get("secciones",{"TÉCNICA":False,"HALLAZGOS":False,"IMPRESIÓN":False})
-        secs_html = "".join([
-            f'<div class="sec-row"><span class="{"sec-ok" if v else "sec-no"}">{"✓" if v else "✗"}</span><span class="sec-nm">{k}</span></div>'
-            for k,v in secciones.items()
-        ])
+    # Barra de completitud externa
+    if st.session_state.reporte_texto:
+        score = calcular_completitud(st.session_state.reporte_texto)
         st.markdown(f"""
-        <div class="qa-wrap">
-          <div style="display:flex;align-items:center;gap:14px">
-            <div>
-              <div class="qa-num" style="color:{sc}">{score}</div>
-              <div class="qa-lbl">QA Score</div>
-              <div class="qa-track" style="width:50px"><div class="qa-fill" style="width:{score}%;background:{sc}"></div></div>
-            </div>
-            <div>{secs_html}</div>
-          </div>
+        <div class="cbar-wrap">
+            <span style="font-size:10px;color:#2a4a6a;font-family:'IBM Plex Mono',monospace;">Completitud del informe</span>
+            <div class="cbar-bg"><div class="cbar-fill" style="width:{score}%"></div></div>
+            <span class="cpct">{score}%</span>
         </div>
         """, unsafe_allow_html=True)
 
-        # Omisiones
-        omisiones = qa.get("omisiones",[])
-        if omisiones:
-            items_html = "".join([f'<div class="warn-item">· {o}</div>' for o in omisiones])
-            st.markdown(f'<div class="warn-box"><div class="warn-title">⚠ Omisiones</div>{items_html}</div>', unsafe_allow_html=True)
+    # ── Acciones IA externas ──
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    c1, c2, c3 = st.columns([1.4, 1.6, 1])
 
-        # Copilot result
-        if st.session_state.copilot_txt:
-            tipo_lbl = {"differential":"Diagnóstico Diferencial","definiciones":"Definiciones & Clasificaciones","qa_full":"Auditoría QA"}.get(st.session_state.copilot_tipo,"Asistente AURA")
-            st.markdown(f"""
-            <div class="cp-box">
-                <div class="cp-label">{tipo_lbl}</div>
-                <div class="cp-text">{st.session_state.copilot_txt}</div>
-            </div>""", unsafe_allow_html=True)
-            st.markdown('<div class="btn-ghost">', unsafe_allow_html=True)
-            if st.button("✕ Cerrar resultado", use_container_width=True, key="close_cp"):
-                st.session_state.copilot_txt = ""; st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
+    with c1:
+        if st.button("⟡ Optimizar conclusión", use_container_width=True):
+            if api_key and st.session_state.reporte_texto:
+                client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+                with st.spinner("Refinando impresión diagnóstica..."):
+                    try:
+                        prompt_ref = f"""
+Eres el optimizador diagnóstico de Beam AI.
 
-        # Sugerencias contextuales
-        if not st.session_state.copilot_txt:
-            clasif_region = KB_REGIONES.get(st.session_state.region,{}).get("clasif",[])
-            if clasif_region:
-                st.markdown('<div style="font-size:9px;font-weight:700;color:#3E3E44;text-transform:uppercase;letter-spacing:.07em;margin-bottom:7px">Sugerencias contextuales</div>', unsafe_allow_html=True)
-                for cn in clasif_region[:3]:
-                    cd = KB_CLASIF.get(cn,{})
-                    st.markdown(f"""
-                    <div class="sug-card">
-                        <div class="sug-tag">Clasificación sugerida</div>
-                        <div class="sug-name">{cn}</div>
-                        <div class="sug-desc">{cd.get('desc','')}</div>
-                        <div class="sug-action">Ver grados →</div>
-                    </div>""", unsafe_allow_html=True)
+TAREA: Lee el informe y MEJORA el bloque IMPRESIÓN DIAGNÓSTICA:
+- Más elegante, concluyente y médicamente precisa.
+- Incluye clasificaciones radiológicas específicas con grado.
+- Agrega correlación clínica y recomendación de manejo si el grado lo amerita.
+- Usa viñetas con "•"
 
-        with st.expander("REFERENCIA RÁPIDA", expanded=False):
-            for cn in KB_REGIONES.get(st.session_state.region,{}).get("clasif",[]):
-                cd2 = KB_CLASIF.get(cn,{})
-                st.markdown(f"""
-                <div class="cl-card">
-                    <div class="cl-hdr">{cn}</div>
-                    <div class="cl-body">
-                        {''.join([f'<div class="cl-row"><span class="cl-grade">{g}</span><span>{desc}</span></div>' for g,desc in cd2.get("grados",{}).items()])}
-                    </div>
-                </div>""", unsafe_allow_html=True)
+REGLAS: Devuelve el informe COMPLETO. Conserva Técnica y Hallazgos intactos.
+CERO asteriscos. Títulos en MAYÚSCULAS.
 
-        with st.expander("AUDITORÍA QA", expanded=False):
-            if st.button("◈ Auditar informe", use_container_width=True, key="qa_full"):
-                client, model_name = get_client()
-                if client and st.session_state.reporte_texto:
-                    with st.spinner("Auditando…"):
-                        try:
-                            res = client.chat.completions.create(model=model_name, messages=[
-                                {"role":"user","content":f"QA como radiólogo experto: estructura, completitud anatómica de {st.session_state.region}, clasificaciones, terminología, impresión diagnóstica. Califica 0-100. Sin asteriscos.\n\nINFORME:\n{st.session_state.reporte_texto}"}
-                            ], temperature=0.15)
-                            st.session_state.copilot_txt  = res.choices[0].message.content
-                            st.session_state.copilot_tipo = "qa_full"
-                            st.rerun()
-                        except Exception as e: st.error(str(e))
-                else:
-                    st.warning("Genera un informe primero.")
+REPORTE:
+{st.session_state.reporte_texto}
+"""
+                        res = client.chat.completions.create(
+                            model="deepseek-chat",
+                            messages=[{"role": "user", "content": prompt_ref}],
+                            temperature=0.25
+                        )
+                        texto = res.choices[0].message.content
+                        st.session_state.reporte_texto = texto
+                        lines = []
+                        for line in texto.split("\n"):
+                            s = line.strip()
+                            if not s:
+                                lines.append("<br>")
+                            elif s.isupper() and len(s) < 60:
+                                lines.append(f"<b>{s}</b><br>")
+                            elif s.startswith("•"):
+                                lines.append(f"<li>{s[1:].strip()}</li>")
+                            else:
+                                lines.append(f"{s}<br>")
+                        st.session_state.reporte_html = "\n".join(lines)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error: {e}")
 
-else:
-    st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
-    if st.button("▶ Abrir panel IA", key="open_rp"):
-        st.session_state.right_open = True; st.rerun()
+    with c2:
+        if st.button("✦ Definiciones y clasificaciones", use_container_width=True):
+            if api_key and st.session_state.reporte_texto:
+                client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+                with st.spinner("Analizando clasificaciones..."):
+                    try:
+                        prompt_def = f"""
+Eres un radiólogo experto y docente. Lee este informe radiológico y responde:
+
+1. CLASIFICACIONES USADAS: Lista cada clasificación mencionada, su grado y qué significa clínicamente.
+2. CLASIFICACIONES FALTANTES: Sugiere clasificaciones específicas que deberían agregarse basadas en los hallazgos.
+3. DEFINICIONES OPERATIVAS: Define en 1-2 líneas los términos técnicos más relevantes del informe.
+4. CORRELACIÓN CLÍNICA: Impacto clínico esperado y recomendación de manejo concisa.
+
+Formato: estructurado, claro, conciso. SIN asteriscos. Títulos en MAYÚSCULAS.
+
+INFORME:
+{st.session_state.reporte_texto}
+"""
+                        res = client.chat.completions.create(
+                            model="deepseek-chat",
+                            messages=[{"role": "user", "content": prompt_def}],
+                            temperature=0.2
+                        )
+                        st.session_state.definiciones_resultado = res.choices[0].message.content
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+
+    with c3:
+        if st.session_state.reporte_texto:
+            docx_bytes = generar_docx(st.session_state.reporte_html or st.session_state.reporte_texto)
+            st.download_button(
+                "↓ Exportar .docx",
+                data=docx_bytes,
+                file_name="BeamAI_Informe.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                use_container_width=True
+            )
+
+    # Resultado de definiciones
+    if st.session_state.definiciones_resultado:
+        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+        with st.expander("⬡  DEFINICIONES OPERATIVAS & CLASIFICACIONES", expanded=True):
+            st.markdown(
+                f'<div style="font-family:\'IBM Plex Mono\',monospace;font-size:12px;color:#8ab0cc;line-height:1.7;background:#0a1020;padding:14px;border-radius:7px;border:1px solid #1a2840;white-space:pre-wrap">{st.session_state.definiciones_resultado}</div>',
+                unsafe_allow_html=True
+            )
+            if st.button("✕ Cerrar análisis"):
+                st.session_state.definiciones_resultado = ""
+                st.rerun()
