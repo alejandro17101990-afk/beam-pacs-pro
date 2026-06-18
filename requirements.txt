@@ -1,6 +1,4 @@
 streamlit
-streamlit-quill
-openai
 python-docx
-pandas
-numpy
+openai
+SpeechRecognition
