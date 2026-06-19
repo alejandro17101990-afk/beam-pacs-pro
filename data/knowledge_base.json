@@ -1,0 +1,58 @@
+{
+  "templates": {
+    "RM Rodilla Estándar": "TÉCNICA\nSecuencias multiplanares en T1, DP con supresión grasa, T2 y STIR.\n\nHALLAZGOS\nMeniscos con señal y morfología evaluadas.\nLigamentos cruzados y colaterales revisados.\nCartílago condral y subcondral.\nDerrame articular y estructuras periarticulares.\n\nIMPRESIÓN DIAGNÓSTICA\n• Informe clínico estructurado con hallazgos clave y conclusiones claras.",
+    "TC Tórax Pulmonar": "TÉCNICA\nTC helicoidal de tórax sin contraste.\n\nHALLAZGOS\nParénquima pulmonar, mediastino y pleuras.\n\nIMPRESIÓN DIAGNÓSTICA\n• Informe estructurado con diagnóstico diferencial y recomendaciones.",
+    "US Mama Básico": "TÉCNICA\nExamen ultrasonográfico de mama con transductor de alta frecuencia.\n\nHALLAZGOS\nLesiones nodulares, quísticas y distorsiones arquitectónicas.\n\nIMPRESIÓN DIAGNÓSTICA\n• Clasificación BI-RADS y recomendaciones de manejo."
+  },
+  "classifications": {
+    "Stoller": ["I", "II", "III"],
+    "Pfirrmann": ["I", "II", "III", "IV", "V"],
+    "BI-RADS": ["0", "1", "2", "3", "4", "5", "6"],
+    "TIRADS": ["1", "2", "3", "4", "5"]
+  },
+  "regions": {
+    "Rodilla": {
+      "mandatory_sections": ["Meniscos", "LCA", "LCP", "Colaterales", "Cartílago", "Derrame", "Hueso subcondral"],
+      "recommendation_note": "Valorar clasificación de Stoller, ICRS y Hope & Feagin; informe seguimiento en caso de lesiones meniscales o condropatías."
+    },
+    "Tórax": {
+      "mandatory_sections": ["Parénquima pulmonar", "Mediastino", "Pleuras", "Vía aérea", "Corazón y grandes vasos"],
+      "recommendation_note": "Describir opacidades, consolidaciones y adenopatías; considerar criterio Fleischner para nódulos pulmonares."
+    },
+    "Mama": {
+      "mandatory_sections": ["Proyección glandular", "Lesiones nodulares", "Ductos", "Pared torácica", "Ganglios axilares"],
+      "recommendation_note": "Aplicar BI-RADS y recomendar correlación mamográfica o biopsia según categoría y hallazgos clínicos."
+    },
+    "Hígado": {
+      "mandatory_sections": ["Parénquima hepático", "Vasos porta y cava", "Vesícula biliar", "Conductos biliares", "Región perihepática"],
+      "recommendation_note": "Caracterizar lesiones focales con LI-RADS si hay sospecha de HCC; correlacionar con AFP y antecedentes clínicos."
+    }
+  },
+  "recommendations": {
+    "seguimiento": "Aplicar recomendaciones de seguimiento según clasificación y hallazgos clínicos.",
+    "biopsia": "Considerar biopsia guiada si la lesión es sospechosa o clasificable como BI-RADS 4/5."
+  },
+  "definitions": {
+    "Desgarro": "Rotura de fibras en un tejido blando, común en meniscos y ligamentos; habitualmente se describe por localización y grado.",
+    "Extrusión": "Protrusión de un menisco fuera de la cortical tibial, valorada en milímetros.",
+    "Edema": "Área de señal aumentada en imágenes ponderadas en T2/STIR, sugestiva de respuesta inflamatoria o sobrecarga.",
+    "Nódulo": "Lesión focal sólida o semisólida con contornos definidos o mal definidos.",
+    "Adenopatía": "Ganglio linfático aumentado de tamaño, a menudo evaluado por morfología y atenuación."
+  },
+  "slash_commands": {
+    "/stoller": {"label": "Clasificación Stoller para meniscos", "template": "Menisco · Stoller: I – señal intrameniscal; II – línea sin extensión articular; III – desgarro con superficie articular."},
+    "/pfirrmann": {"label": "Escala Pfirrmann para disco lumbar", "template": "Columna · Pfirrmann: I normal; II leve; III moderado; IV severo; V colapso discal."},
+    "/birads": {"label": "Clasificación BI-RADS de mama", "template": "Mama · BI-RADS: 0 incompleto; 1 negativo; 2 benigno; 3 probablemente benigno; 4 sospechoso; 5 altamente sugestivo; 6 maligno confirmado."},
+    "/tirads": {"label": "Clasificación TIRADS de tiroides", "template": "Tiroides · TIRADS: 1 benigno; 2 no sospechoso; 3 leve; 4 moderado; 5 alto riesgo."},
+    "/fleischner": {"label": "Criterios Fleischner de nódulo pulmonar", "template": "Pulmón · Fleischner: seguimiento según tamaño y características del nódulo; menor 6 mm generalmente sin seguimiento si de bajo riesgo."},
+    "/lirads": {"label": "Clasificación LI-RADS de hígado", "template": "Hígado · LI-RADS: LR-1 benigno; LR-2 probablemente benigno; LR-3 indeterminado; LR-4 probable HCC; LR-5 definitivo HCC."},
+    "/bosniak": {"label": "Clasificación Bosniak de quistes renales", "template": "Riñón · Bosniak: I benigno; II mínimamente complejo; IIF seguimiento; III indeterminado; IV malignidad probable."},
+    "/lund-mackay": {"label": "Escala Lund-Mackay", "template": "Senos paranasales · Lund-Mackay: escala 0-24 para obstrucción de senos paranasales."}
+  },
+  "differentials": {
+    "desgarro": ["Lesión meniscal degenerativa", "Fibrilación condral asociada", "Quiste parameniscal"],
+    "adenopatía": ["Inflamación reactiva", "Linfoma", "Metástasis"],
+    "nódulo": ["Hamartoma", "Adenoma", "Carcinoma"],
+    "edema": ["Contusión ósea", "Osteoartritis activa", "Lesión por sobrecarga"]
+  }
+}
