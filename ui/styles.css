@@ -1,0 +1,145 @@
+:root {
+  --bg-app: #070a10;
+  --bg-surface: #0b0f1a;
+  --bg-card: #0f1520;
+  --bg-input: #0f1520;
+  --bg-editor: #0a1018;
+  --border: #1a2333;
+  --border-light: #1a2f48;
+  --border-hover: #2a5a8a;
+  --text: #d0e4f0;
+  --text-bright: #e8f4ff;
+  --text-muted: #4a6a8a;
+  --accent: #3b8bd4;
+  --accent-bg: #0d1e30;
+  --accent-border: #1a3a58;
+  --success: #2ecc71;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Arial, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SF Mono', 'Fira Code', monospace;
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 8px;
+}
+
+[data-theme="light"] {
+  --bg-app: #f0f2f5;
+  --bg-surface: #ffffff;
+  --bg-card: #f8f9fa;
+  --bg-input: #ffffff;
+  --bg-editor: #ffffff;
+  --border: #d0d5dd;
+  --border-light: #e0e3e8;
+  --border-hover: #98a2b3;
+  --text: #1a2233;
+  --text-bright: #000a1a;
+  --text-muted: #667085;
+  --accent: #2563eb;
+  --accent-bg: #eff6ff;
+  --accent-border: #bfdbfe;
+  --success: #16a34a;
+}
+
+.stApp { background: var(--bg-app) !important; }
+.block-container { padding: 0 !important; max-width: 100% !important; }
+#MainMenu, footer, header, .stAppToolbar { display: none !important; }
+* { box-sizing: border-box; }
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 2px; }
+
+.stApp .stHorizontalBlock:first-of-type {
+  background: var(--bg-surface) !important;
+  border-bottom: 1px solid var(--border) !important;
+  padding: 8px 20px !important;
+  align-items: center;
+  margin: 0 !important;
+  gap: 12px !important;
+}
+.stApp .stHorizontalBlock:first-of-type > div[data-testid="column"] { padding: 0 !important; }
+
+.brand {
+  font-family: 'Syne', 'Inter', sans-serif; font-weight: 700; font-size: 14px;
+  color: var(--text-bright); letter-spacing: .1em; white-space: nowrap; line-height: 32px;
+}
+.brand-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); display: inline-block; margin-right: 6px; }
+.badge {
+  font-size: 10px; color: var(--accent); background: var(--accent-bg);
+  border: 1px solid var(--accent-border); border-radius: var(--radius-sm); padding: 2px 8px;
+  font-family: var(--font-mono); white-space: nowrap; line-height: 28px;
+}
+.top-status {
+  margin-left: auto; font-size: 10px; color: var(--success);
+  font-family: var(--font-mono); display: flex; align-items: center; gap: 5px; line-height: 28px;
+}
+.status-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--success); display: inline-block; }
+
+.section-label {
+  font-size: 9px; letter-spacing: .15em; color: var(--text-muted);
+  text-transform: uppercase; font-family: var(--font-mono);
+  margin-bottom: 3px; display: block;
+}
+
+.stButton > button {
+  background: var(--bg-card) !important; border: 1px solid var(--border-light) !important;
+  color: var(--accent) !important; font-family: var(--font-mono) !important;
+  font-size: 11px !important; border-radius: var(--radius) !important;
+  padding: 4px 12px !important; height: 32px !important;
+  box-shadow: none !important; cursor: pointer !important;
+  transition: all .15s !important;
+}
+.stButton > button:hover { border-color: var(--border-hover) !important; color: var(--text-bright) !important; }
+
+.btn-primary > div > button {
+  background: var(--accent-bg) !important; border: 1px solid var(--accent-border) !important;
+  color: var(--accent) !important; font-family: 'Syne', 'Inter', sans-serif !important;
+  font-weight: 700 !important; font-size: 12px !important;
+  padding: .6rem 1rem !important; width: 100% !important;
+}
+.btn-primary > div > button:hover { background: var(--accent-bg) !important; border-color: var(--accent) !important; }
+
+.stTextArea { width: 100% !important; }
+.stTextArea > div { width: 100% !important; }
+.stTextArea textarea {
+  background: var(--bg-input) !important; border: 1px solid var(--border-light) !important;
+  border-radius: var(--radius) !important; color: var(--text) !important;
+  font-family: var(--font-mono) !important; font-size: 11px !important; line-height: 1.6 !important;
+  box-shadow: none !important;
+}
+.stTextArea textarea:focus { border-color: var(--border-hover) !important; box-shadow: none !important; }
+
+.stSelectbox > div > div {
+  background: var(--bg-card) !important; border: 1px solid var(--border-light) !important;
+  border-radius: var(--radius) !important; color: var(--accent) !important;
+  font-family: var(--font-mono) !important; font-size: 11px !important;
+}
+
+.streamlit-expanderHeader {
+  color: var(--accent) !important; font-family: var(--font-mono) !important;
+  font-size: 11px !important; letter-spacing: .05em !important;
+}
+.streamlit-expanderHeader:hover { color: var(--text-bright) !important; }
+[data-testid="stExpander"] {
+  background: var(--bg-surface) !important; border: 1px solid var(--border) !important;
+  border-radius: var(--radius) !important; margin-bottom: 3px !important;
+}
+
+[data-testid="stAudioInput"] {
+  background: var(--bg-card) !important; border: 1px solid var(--border-light) !important;
+  border-radius: var(--radius-lg) !important;
+}
+[data-testid="stFileUploader"] {
+  background: var(--bg-card) !important; border: 1px dashed var(--border-light) !important;
+  border-radius: var(--radius-lg) !important;
+}
+[data-testid="stFileUploader"] * { color: var(--text-muted) !important; font-family: var(--font-mono) !important; font-size: 10px !important; }
+
+.stDownloadButton > button {
+  background: var(--bg-card) !important; border: 1px solid var(--border-light) !important;
+  color: var(--accent) !important; font-family: var(--font-mono) !important;
+  font-size: 11px !important; border-radius: var(--radius) !important;
+}
+
+@media (max-width: 768px) {
+  .stHorizontalBlock { flex-wrap: wrap !important; gap: 4px !important; }
+}
